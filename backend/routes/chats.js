@@ -3,6 +3,7 @@ const express = require("express");
 const router = express.Router();
 const { protect } = require("../middleware/auth");
 const Chat = require("../models/Chat");
+const User = require("../models/User");
 const Message = require("../models/Message");
 const multer = require("multer");
 const { messageLimiter } = require("../middleware/rateLimiter");
@@ -27,15 +28,26 @@ router.post('/create', protect, async (req, res) => {
   try {
     // Check if a chat between these two users already exists
     let chat = await Chat.findOne({
-      participants: { $all: [req.user._id, participantId] }
+      participants: { $all: [req.user._id, participantId] },
     });
     if (chat) {
       return res.status(200).json(chat);
     }
     // Create a new chat
     chat = await Chat.create({
-      participants: [req.user._id, participantId]
+      participants: [req.user._id, participantId],
     });
+
+    const updatedChat = await Chat.findById(chat._id).populate(
+      "lastMessage participants"
+    );
+
+    // Emit event to the target participant in real time if they are online
+    const io = req.app.get("io");
+    if (io) {
+      io.to(participantId).emit("new-chat", updatedChat);
+    }
+
     return res.status(201).json(chat);
   } catch (error) {
     console.error('Error creating chat:', error);
@@ -66,8 +78,13 @@ router.get("/:chatId/messages", protect, async (req, res) => {
       .sort({ sentAt: -1 })
       .skip(Number(skip))
       .limit(Number(limit));
-    // Reverse to display oldest first
-    res.json(messages.reverse());
+
+    // Count the total messages in the chat
+    const totalCount = await Message.countDocuments({ chat: chatId });
+    const hasMore = Number(skip) + messages.length < totalCount;
+
+    // Reverse messages to display oldest first and return with "hasMore" property
+    res.json({ messages: messages.reverse(), hasMore });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
@@ -99,9 +116,10 @@ router.post(
           .json({ message: "Not a participant of this chat" });
       }
       // Determine the recipient (the other participant)
-      const recipientId = chat.participants.find(
-        (id) => id.toString() !== req.user._id.toString()
-      );
+      const recipientId = chat.participants
+        .find((id) => id.toString() !== req.user._id.toString())
+        .toString();
+      // Create the message (include sentAt explicitly)
       const messageData = {
         chat: chatId,
         sender: req.user._id,
@@ -111,15 +129,38 @@ router.post(
         replyTo: replyTo || null,
         media,
         status: "sent",
+        sentAt: new Date(),
       };
       const SavedMsg = await Message.create(messageData);
       // Update chat with the last message
       chat.lastMessage = SavedMsg._id;
       chat.updatedAt = new Date();
       await chat.save();
+      // Populate for response
       const message = await Message.findById(SavedMsg._id).populate(
         "chat sender recipient"
       );
+      // --- Emit Socket.IO Events ---
+      const io = req.app.get("io");
+      // Retrieve sender's username
+      const senderUser = await User.findById(req.user._id).select("username");
+      const payload = {
+        _id: SavedMsg._id,
+        chat: chatId,
+        sender: senderUser,
+        text,
+        encryptedText,
+        status: "sent",
+        sentAt: SavedMsg.sentAt,
+      };
+      // Emit new-message event to the chat room
+      io.to(chatId).emit("new-message", payload);
+      // Also emit a chat-list-updated event (for chat list refresh)
+      io.to([req.user._id, recipientId]).emit("chat-list-updated", {
+        chatId,
+        lastMessage: payload,
+      });
+      // --- End Emit ---
       res.status(201).json(message);
     } catch (err) {
       res.status(500).json({ message: err.message });
