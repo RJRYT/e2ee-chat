@@ -39,11 +39,13 @@ router.get("/public-key/:userId", protect, async (req, res) => {
 router.get("/search", protect, async (req, res) => {
   try {
     const query = req.query.query || "";
+    if(!query) return res.json([]);
     const users = await User.find({
       $or: [
         { username: { $regex: query, $options: "i" } },
         { email: { $regex: query, $options: "i" } },
       ],
+      _id: { $ne: req.user._id },
     }).select("username email");
     res.json(users);
   } catch (err) {
