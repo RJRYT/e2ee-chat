@@ -5,19 +5,8 @@ const { protect } = require("../middleware/auth");
 const Chat = require("../models/Chat");
 const User = require("../models/User");
 const Message = require("../models/Message");
-const multer = require("multer");
 const { messageLimiter } = require("../middleware/rateLimiter");
-
-// Set up file storage for multimedia
-const storage = multer.diskStorage({
-  destination: function (req, file, cb) {
-    cb(null, "uploads/"); // Make sure this directory exists & is secured in production
-  },
-  filename: function (req, file, cb) {
-    cb(null, Date.now() + "-" + file.originalname);
-  },
-});
-const upload = multer({ storage: storage });
+const upload = require("../middleware/upload");
 
 // POST /api/chats/create - Create a new chat with a participant
 router.post("/create", protect, async (req, res) => {
@@ -110,7 +99,7 @@ router.post(
       if (req.file) {
         media = {
           type: mediaType, // e.g., image, video, audio, file, voice
-          url: `/uploads/${req.file.filename}`,
+          url: req.file.location,
           caption: text || "",
         };
       }
@@ -207,6 +196,7 @@ router.delete("/:chatId/message/:messageId", protect, async (req, res) => {
     message.deleted = true;
     message.text = "This message was deleted";
     message.encryptedText = "";
+    message.media = null;
     await message.save();
     const io = req.app.get("io");
     io.to(chatId).emit("message-deleted", { messageId });

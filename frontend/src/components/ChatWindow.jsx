@@ -222,7 +222,7 @@ const ChatWindow = ({ chatId }) => {
       console.log("[Socket] Message deleted event received:", messageId);
       setMessages((prevMessages) =>
         prevMessages.map((msg) =>
-          msg._id === messageId ? { ...msg, deleted: true } : msg
+          msg._id === messageId ? { ...msg, deleted: true, media: null } : msg
         )
       );
     };
@@ -526,32 +526,26 @@ const MessageItem = ({
         <div className="mt-2">
           {msg.media.type === "image" && (
             <img
-              src={import.meta.env.VITE_SOCKET_URL + msg.media.url}
+              src={msg.media.url}
               alt="Uploaded"
               className="max-w-xs rounded"
             />
           )}
           {msg.media.type === "video" && (
             <video controls className="max-w-xs rounded">
-              <source
-                src={import.meta.env.VITE_SOCKET_URL + msg.media.url}
-                type="video/mp4"
-              />
+              <source src={msg.media.url} type="video/mp4" />
               Your browser does not support the video tag.
             </video>
           )}
           {(msg.media.type === "voice" || msg.media.type === "audio") && (
             <audio controls className="w-full">
-              <source
-                src={import.meta.env.VITE_SOCKET_URL + msg.media.url}
-                type="audio/webm"
-              />
+              <source src={msg.media.url} type="audio/webm" />
               Your browser does not support the audio element.
             </audio>
           )}
           {msg.media.type === "document" && (
             <a
-              href={import.meta.env.VITE_SOCKET_URL + msg.media.url}
+              href={msg.media.url}
               target="_blank"
               rel="noopener noreferrer"
               className="text-blue-500 underline"
@@ -561,7 +555,7 @@ const MessageItem = ({
           )}
           {msg.media.type === "file" && (
             <a
-              href={import.meta.env.VITE_SOCKET_URL + msg.media.url}
+              href={msg.media.url}
               target="_blank"
               rel="noopener noreferrer"
               className="text-blue-500 underline"

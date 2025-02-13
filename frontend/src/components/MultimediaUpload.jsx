@@ -68,9 +68,9 @@ const MultimediaUpload = ({
     setLiveMode(true);
     setIsLoading(true);
     try {
-        if (mode !== "audio") {
-          await waitForVideoElement();
-        }
+      if (mode !== "audio") {
+        await waitForVideoElement();
+      }
       let constraints = {};
       if (mode === "audio") {
         constraints = { audio: true };
@@ -144,21 +144,21 @@ const MultimediaUpload = ({
       setRecordTime(0);
       setIsRecording(false);
       mediaRecorderRef.current.onstop = () => {
-            const chunks = recordedChunksRef.current;
-            if (streamRef.current) {
-              streamRef.current.getTracks().forEach((track) => track.stop());
-            }
-            if (chunks.length === 0) {
-              setUploadError("No data recorded. Please try again.");
-              return;
-            }
-            const blob = new Blob(chunks, { type: "video/webm" });
-            const file = new File([blob], "video.webm", { type: "video/webm" });
-            setPreviewUrl(URL.createObjectURL(blob));
-            setMediaFile(file);
-            setMediaType("video");
-            setLiveMode(false);
-            setLiveCaptureMode(null);
+        const chunks = recordedChunksRef.current;
+        if (streamRef.current) {
+          streamRef.current.getTracks().forEach((track) => track.stop());
+        }
+        if (chunks.length === 0) {
+          setUploadError("No data recorded. Please try again.");
+          return;
+        }
+        const blob = new Blob(chunks, { type: "video/webm" });
+        const file = new File([blob], "video.webm", { type: "video/webm" });
+        setPreviewUrl(URL.createObjectURL(blob));
+        setMediaFile(file);
+        setMediaType("video");
+        setLiveMode(false);
+        setLiveCaptureMode(null);
       };
     }
   };
@@ -266,9 +266,9 @@ const MultimediaUpload = ({
           <div className="bg-white p-4 rounded shadow-lg relative max-w-lg w-full">
             <button
               onClick={reset}
-              className="absolute top-0 right-0 m-2 text-red-500 font-bold"
+              className="absolute top-0 right-0 m-1 text-red-500 font-bold"
             >
-              <IoMdClose size={18} />
+              <IoMdClose size={25} />
             </button>
 
             {isLoading && <div className="text-center">Loading...</div>}
@@ -281,9 +281,9 @@ const MultimediaUpload = ({
                 className="w-full h-auto"
               />
             )}
-            {liveCaptureMode === "audio" && (
+            {liveCaptureMode === "audio" && !isLoading && (
               <div className="text-center p-4">
-                Audio recording in progress...
+                Ready to record
               </div>
             )}
             {isRecording && (
@@ -294,13 +294,14 @@ const MultimediaUpload = ({
             {uploadError && (
               <div className="mt-2 text-red-500">{uploadError}</div>
             )}
-            <div className="mt-4 flex justify-end space-x-2">
+            <div className="mt-4 flex justify-center space-x-2">
               {liveCaptureMode === "image" && (
                 <button
                   onClick={captureImage}
                   className="bg-green-500 text-white px-4 py-2 rounded"
+                  disabled={isLoading}
                 >
-                  Capture Photo
+                  <FaCamera size={25} />
                 </button>
               )}
               {liveCaptureMode === "video" && (
@@ -309,15 +310,17 @@ const MultimediaUpload = ({
                     <button
                       onClick={startVideoRecording}
                       className="bg-purple-500 text-white px-4 py-2 rounded"
+                      disabled={isLoading}
                     >
-                      Start Recording
+                      <FaVideo size={25} />
                     </button>
                   ) : (
                     <button
                       onClick={stopVideoRecording}
-                      className="bg-purple-500 text-white px-4 py-2 rounded"
+                      className="bg-red-500 text-white px-4 py-2 rounded"
+                      disabled={isLoading}
                     >
-                      Stop Recording
+                      <IoMdClose size={25} />
                     </button>
                   )}
                 </>
@@ -328,15 +331,17 @@ const MultimediaUpload = ({
                     <button
                       onClick={startAudioRecording}
                       className="bg-orange-500 text-white px-4 py-2 rounded"
+                      disabled={isLoading}
                     >
-                      Start Recording
+                      <FaMicrophone size={25} />
                     </button>
                   ) : (
                     <button
                       onClick={stopAudioRecording}
-                      className="bg-orange-500 text-white px-4 py-2 rounded"
+                      className="bg-red-500 text-white px-4 py-2 rounded"
+                      disabled={isLoading}
                     >
-                      Stop Recording
+                      <IoMdClose size={25} />
                     </button>
                   )}
                 </>
@@ -354,7 +359,7 @@ const MultimediaUpload = ({
               onClick={reset}
               className="absolute top-0 right-0 m-2 text-red-500 font-bold"
             >
-              <IoMdClose size={18} />
+              <IoMdClose size={25} />
             </button>
             {mediaType === "image" && (
               <img src={previewUrl} alt="Preview" className="w-full h-auto" />
