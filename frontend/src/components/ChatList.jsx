@@ -1,8 +1,8 @@
-import React, { useState, useEffect, useContext } from 'react';
-import axiosInstance from '../services/api';
-import { AuthContext } from '../context/AuthContext';
-import { useSocket } from '../context/SocketContext';
-import { useNavigate } from 'react-router-dom';
+import React, { useState, useEffect, useContext } from "react";
+import axiosInstance from "../services/api";
+import { AuthContext } from "../context/AuthContext";
+import { useSocket } from "../context/SocketContext";
+import { useNavigate } from "react-router-dom";
 
 const ChatList = () => {
   const { auth } = useContext(AuthContext);
@@ -12,10 +12,10 @@ const ChatList = () => {
 
   const fetchChats = async () => {
     try {
-      const res = await axiosInstance.get('/chats');
+      const res = await axiosInstance.get("/chats");
       setChats(res.data);
     } catch (err) {
-      console.error('Failed to fetch chats:', err);
+      console.error("Failed to fetch chats:", err);
     }
   };
 
@@ -27,6 +27,7 @@ const ChatList = () => {
   // Listen for real-time updates via the shared socket connection
   useEffect(() => {
     if (!socket) return;
+    socket.emit("bulk-chat-message-delivered");
 
     // Handle chat-updated event to update a chat's lastMessage and unreadCount
     const handleChatUpdated = (data) => {
@@ -58,14 +59,19 @@ const ChatList = () => {
     };
 
     // Handle user-status event: update online status for participants
-    const handleUserStatus = ({ userId, online }) => {
-      console.log("[Socket] User status event received:", userId, online);
+    const handleUserStatus = ({ userId, online, lastActive }) => {
+      console.log(
+        "[Socket] User status event received:",
+        userId,
+        online,
+        lastActive
+      );
       setChats((prevChats) => {
         return prevChats.map((chat) => {
           // For each chat, update the online status for the participant that matches userId
           const updatedParticipants = chat.participants.map((participant) => {
             if (participant._id === userId) {
-              return { ...participant, online };
+              return { ...participant, online, lastActive };
             }
             return participant;
           });
@@ -74,13 +80,9 @@ const ChatList = () => {
       });
     };
 
-    const handleBatchDelivered = (data) => {
-      console.log("[Socket] Batch message delivered event received:", data);
-      // Option 1: Re-fetch chats
+    const handleBatchDelivered = () => {
+      console.log("[Socket] Batch message delivered event received");
       fetchChats();
-
-      // Option 2 (advanced): Update local state by iterating through chats and updating messages that match any id in data.messageIds.
-      // For simplicity, re-fetching is shown here.
     };
 
     // Listen for both chat-list-updated and new-chat events
@@ -101,9 +103,10 @@ const ChatList = () => {
     <div className="bg-white rounded shadow p-4">
       <h3 className="text-lg font-bold mb-2">Your Chats</h3>
       <ul>
-        {chats.map(chat => {
+        {chats.map((chat) => {
           // Determine the other participant (assuming participants is populated)
-          const otherParticipant = chat.participants.find(p => p._id !== auth.user.id) || {};
+          const otherParticipant =
+            chat.participants.find((p) => p._id !== auth.user._id) || {};
           return (
             <li
               key={chat._id}
@@ -123,9 +126,11 @@ const ChatList = () => {
                   {chat.lastMessage
                     ? new Date(chat.lastMessage.sentAt).toLocaleTimeString()
                     : ""}{" "}
-                  {chat.lastMessage && chat.lastMessage.status !== "seen" && (
-                    <span className="ml-2 inline-block w-2 h-2 bg-green-500 rounded-full"></span>
-                  )}
+                  {chat.lastMessage &&
+                    chat.lastMessage.status !== "seen" &&
+                    chat.lastMessage.sender._id !== auth.user._id && (
+                      <span className="ml-2 inline-block w-2 h-2 bg-blue-500 rounded-full"></span>
+                    )}
                 </span>
               </div>
               <div className="text-sm text-gray-600">

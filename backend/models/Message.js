@@ -23,8 +23,8 @@ const MessageSchema = new mongoose.Schema({
   replyTo: { type: mongoose.Schema.Types.ObjectId, ref: "Message" },
   media: {
     type: {
-      type: String, // 'image', 'video', 'audio', 'file', 'voice'
-      enum: ["image", "video", "audio", "file", "voice", null],
+      type: String, 
+      enum: ["image", "video", "audio", "file", "voice", "document", null],
       default: null,
     },
     url: { type: String },

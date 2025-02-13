@@ -66,6 +66,22 @@ io.on("connection", (socket) => {
     console.log(`[Socket] Incoming event from ${socket.userId}:`, event, args);
   });
 
+  // --- Update User Online Status on Connection ---
+  User.findByIdAndUpdate(
+    socket.userId,
+    { online: true, lastActive: new Date() },
+    { new: true }
+  )
+    .then((updatedUser) => {
+      console.log(`User ${socket.userId} is online`);
+      socket.broadcast.emit("user-status", {
+        userId: updatedUser._id,
+        online: updatedUser.online,
+        lastActive: updatedUser.lastActive,
+      });
+    })
+    .catch((err) => console.error("Error updating user status:", err));
+
   // --- New Code for Offline-to-Online Delivered Status ---
   // When a user comes online, update all messages sent to them that are still "sent" to "delivered"
   Message.find({ recipient: socket.userId, status: "sent" })
@@ -82,9 +98,24 @@ io.on("connection", (socket) => {
               messageIds
             );
             // Emit a batch event to this user's room so their client can update UI accordingly.
-            io.to(socket.userId).emit("batch-message-delivered", {
-              messageIds,
+            io.to(socket.userId).emit("batch-message-delivered");
+            // Group messages by chat ID
+            const chatGroups = {};
+            messages.forEach((m) => {
+              const chatId = m.chat.toString();
+              if (!chatGroups[chatId]) {
+                chatGroups[chatId] = [];
+              }
+              chatGroups[chatId].push(m._id);
             });
+            // For each unique chat, emit a bulk chat delivered event with array of message IDs
+            for (const chatId in chatGroups) {
+              const bulkMessageIds = chatGroups[chatId];
+              io.to(chatId).emit("bulk-chat-delivered", {
+                chatId,
+                messageIds: bulkMessageIds,
+              });
+            }
           })
           .catch((err) =>
             console.error("Error updating offline messages:", err)
@@ -108,14 +139,15 @@ io.on("connection", (socket) => {
         message.deliveredAt = new Date();
         await message.save();
         console.log(`[Socket] Message ${messageId} updated to delivered.`);
+        io.to(chatId).emit("message-delivered", { messageId });
       }
     } catch (err) {
       console.error("Error in message-delivered:", err);
     }
   });
 
-  // --- Batch Message Delivered ---
-  socket.on("batch-message-delivered", async () => {
+  // --- Bulk chat Message Delivered ---
+  socket.on("bulk-chat-message-delivered", async () => {
     try {
       // Find all messages for this user that are still "sent"
       const messages = await Message.find({
@@ -128,9 +160,25 @@ io.on("connection", (socket) => {
           { _id: { $in: messageIds } },
           { $set: { status: "delivered", deliveredAt: new Date() } }
         );
-        console.log(`[Socket] Batch delivered for messages:`, messageIds);
-        // Notify this user so their UI can update accordingly
-        io.to(socket.userId).emit("batch-message-delivered", { messageIds });
+        // Emit a batch event to this user's room so their client can update UI accordingly.
+        io.to(socket.userId).emit("batch-message-delivered");
+        // Group messages by chat ID
+        const chatGroups = {};
+        messages.forEach((m) => {
+          const chatId = m.chat.toString();
+          if (!chatGroups[chatId]) {
+            chatGroups[chatId] = [];
+          }
+          chatGroups[chatId].push(m._id);
+        });
+        // For each unique chat, emit a bulk chat delivered event with array of message IDs
+        for (const chatId in chatGroups) {
+          const bulkMessageIds = chatGroups[chatId];
+          io.to(chatId).emit("bulk-chat-delivered", {
+            chatId,
+            messageIds: bulkMessageIds,
+          });
+        }
       }
     } catch (err) {
       console.error("Error in batch-message-delivered:", err);
@@ -203,6 +251,22 @@ io.on("connection", (socket) => {
 
   socket.on("disconnect", () => {
     console.log(`[Socket] Client disconnected: ${socket.userId}`);
+    // --- Update User Online Status on Disconnect ---
+    User.findByIdAndUpdate(
+      socket.userId,
+      { online: false, lastActive: new Date() },
+      { new: true }
+    )
+      .then((updatedUser) => {
+        socket.broadcast.emit("user-status", {
+          userId: updatedUser._id,
+          online: updatedUser.online,
+          lastActive: updatedUser.lastActive,
+        });
+      })
+      .catch((err) =>
+        console.error("Error updating user status on disconnect:", err)
+      );
   });
 });
 

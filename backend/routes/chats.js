@@ -20,10 +20,10 @@ const storage = multer.diskStorage({
 const upload = multer({ storage: storage });
 
 // POST /api/chats/create - Create a new chat with a participant
-router.post('/create', protect, async (req, res) => {
+router.post("/create", protect, async (req, res) => {
   const { participantId } = req.body;
   if (!participantId) {
-    return res.status(400).json({ message: 'Participant id is required.' });
+    return res.status(400).json({ message: "Participant id is required." });
   }
   try {
     // Check if a chat between these two users already exists
@@ -50,8 +50,8 @@ router.post('/create', protect, async (req, res) => {
 
     return res.status(201).json(chat);
   } catch (error) {
-    console.error('Error creating chat:', error);
-    return res.status(500).json({ message: 'Server error.' });
+    console.error("Error creating chat:", error);
+    return res.status(500).json({ message: "Server error." });
   }
 });
 
@@ -73,8 +73,14 @@ router.get("/:chatId/messages", protect, async (req, res) => {
   try {
     const { chatId } = req.params;
     const { skip = 0, limit = 20 } = req.query;
+    const chat = await Chat.findById(chatId).populate("participants");
+    const otherUser =
+      chat.participants[0]._id.toString() === req.user._id.toString()
+        ? chat.participants[1]
+        : chat.participants[0];
+ 
     const messages = await Message.find({ chat: chatId })
-      .populate("chat sender recipient")
+      .populate("chat sender recipient replyTo")
       .sort({ sentAt: -1 })
       .skip(Number(skip))
       .limit(Number(limit));
@@ -84,7 +90,7 @@ router.get("/:chatId/messages", protect, async (req, res) => {
     const hasMore = Number(skip) + messages.length < totalCount;
 
     // Reverse messages to display oldest first and return with "hasMore" property
-    res.json({ messages: messages.reverse(), hasMore });
+    res.json({ messages: messages.reverse(), hasMore, sender: otherUser });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
@@ -138,27 +144,16 @@ router.post(
       await chat.save();
       // Populate for response
       const message = await Message.findById(SavedMsg._id).populate(
-        "chat sender recipient"
+        "chat sender recipient replyTo"
       );
       // --- Emit Socket.IO Events ---
       const io = req.app.get("io");
-      // Retrieve sender's username
-      const senderUser = await User.findById(req.user._id).select("username");
-      const payload = {
-        _id: SavedMsg._id,
-        chat: chatId,
-        sender: senderUser,
-        text,
-        encryptedText,
-        status: "sent",
-        sentAt: SavedMsg.sentAt,
-      };
       // Emit new-message event to the chat room
-      io.to(chatId).emit("new-message", payload);
+      io.to(chatId).emit("new-message", message);
       // Also emit a chat-list-updated event (for chat list refresh)
       io.to([req.user._id, recipientId]).emit("chat-list-updated", {
         chatId,
-        lastMessage: payload,
+        lastMessage: message,
       });
       // --- End Emit ---
       res.status(201).json(message);
@@ -171,11 +166,13 @@ router.post(
 // PUT /api/chats/:chatId/message/:messageId - edit a message
 router.put("/:chatId/message/:messageId", protect, async (req, res) => {
   try {
-    const { messageId } = req.params;
+    const { chatId, messageId } = req.params;
     const { text, encryptedText } = req.body;
-    const message = await Message.findById(messageId).populate("chat sender recipient");
+    const message = await Message.findById(messageId).populate(
+      "chat sender recipient replyTo"
+    );
     if (!message) return res.status(404).json({ message: "Message not found" });
-    if (message.sender.toString() !== req.user._id.toString()) {
+    if (message.sender._id.toString() !== req.user._id.toString()) {
       return res
         .status(403)
         .json({ message: "Not authorized to edit this message" });
@@ -187,6 +184,8 @@ router.put("/:chatId/message/:messageId", protect, async (req, res) => {
     message.encryptedText = encryptedText;
     message.edited = true;
     await message.save();
+    const io = req.app.get("io");
+    io.to(chatId).emit("message-edited", message);
     res.json(message);
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -196,7 +195,7 @@ router.put("/:chatId/message/:messageId", protect, async (req, res) => {
 // DELETE /api/chats/:chatId/message/:messageId - delete (soft delete) a message
 router.delete("/:chatId/message/:messageId", protect, async (req, res) => {
   try {
-    const { messageId } = req.params;
+    const { chatId, messageId } = req.params;
     const message = await Message.findById(messageId);
     if (!message) return res.status(404).json({ message: "Message not found" });
     if (message.sender.toString() !== req.user._id.toString()) {
@@ -209,6 +208,8 @@ router.delete("/:chatId/message/:messageId", protect, async (req, res) => {
     message.text = "This message was deleted";
     message.encryptedText = "";
     await message.save();
+    const io = req.app.get("io");
+    io.to(chatId).emit("message-deleted", { messageId });
     res.json({ message: "Message deleted" });
   } catch (err) {
     res.status(500).json({ message: err.message });
