@@ -1,11 +1,13 @@
 import React, { useState, useEffect, useRef, useContext } from "react";
-import { FaEllipsisH, FaPaperPlane } from "react-icons/fa";
+import { FaPaperPlane, FaTimes } from "react-icons/fa";
+import { HiDotsVertical } from "react-icons/hi";
 import axiosInstance from "../services/api";
 import { Picker } from "emoji-mart";
 import "emoji-mart/css/emoji-mart.css";
 import { AuthContext } from "../context/AuthContext";
 import { useSocket } from "../context/SocketContext";
 import MultimediaUpload from "./MultimediaUpload";
+import { ArrowLeft, Circle } from "lucide-react";
 
 const ChatWindow = ({ chatId }) => {
   const { auth } = useContext(AuthContext);
@@ -20,6 +22,9 @@ const ChatWindow = ({ chatId }) => {
   const [showMediaPopup, setShowMediaPopup] = useState(false);
   const [typingUsers, setTypingUsers] = useState([]);
   const [skip, setSkip] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [isSendingDisabled, setIsSendingDisabled] = useState(false);
   const limit = 20;
   const messagesEndRef = useRef(null);
   const [hasMore, setHasMore] = useState(true);
@@ -27,6 +32,8 @@ const ChatWindow = ({ chatId }) => {
   const typingDebounceRef = useRef(null);
   const stopTypingTimeoutRef = useRef(null);
   const scrollContainerRef = useRef(null);
+  const emojiPickerRef = useRef(null);
+  const mediaPopupRef = useRef(null);
 
   // Join the chat room when the component mounts
   useEffect(() => {
@@ -49,8 +56,35 @@ const ChatWindow = ({ chatId }) => {
     }
   }, [chatId, socket]);
 
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (
+        emojiPickerRef.current &&
+        !emojiPickerRef.current.contains(event.target)
+      ) {
+        setShowEmojiPicker(false);
+      }
+      if (
+        mediaPopupRef.current &&
+        !mediaPopupRef.current.contains(event.target)
+      ) {
+        setShowMediaPopup(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, []);
+
   const fetchMessages = async (reset = false) => {
     try {
+      if (reset) {
+        setLoading(true);
+      } else {
+        setLoadingMore(true);
+      }
       const response = await axiosInstance.get(
         `/chats/${chatId}/messages?skip=${reset ? 0 : skip}&limit=${limit}`
       );
@@ -59,6 +93,7 @@ const ChatWindow = ({ chatId }) => {
         setMessages(response.data.messages);
         setSkip(response.data.messages.length);
         setHasMore(response.data.hasMore);
+        setLoading(false);
       } else {
         // Record current scroll height before updating state
         const container = scrollContainerRef.current;
@@ -68,6 +103,7 @@ const ChatWindow = ({ chatId }) => {
         setMessages((prev) => [...response.data.messages, ...prev]);
         setSkip(skip + response.data.messages.length);
         setHasMore(response.data.hasMore);
+        setLoadingMore(false);
 
         // Wait for the new messages to render, then adjust scrollTop
         setTimeout(() => {
@@ -80,6 +116,8 @@ const ChatWindow = ({ chatId }) => {
       }
     } catch (err) {
       console.error("Failed to fetch messages", err);
+      setLoading(false);
+      setLoadingMore(false);
     }
   };
 
@@ -261,7 +299,18 @@ const ChatWindow = ({ chatId }) => {
   };
 
   const handleSend = async () => {
+    if (!messageText.trim()) return;
+    // Prevent spam: disable sending for 3 seconds after a message is sent
+    setIsSendingDisabled(true);
+    setTimeout(() => setIsSendingDisabled(false), 3000);
+
     if (editingMessage) {
+      // If editing message and text is unchanged, cancel edit
+      if (messageText.trim() === editingMessage.text.trim()) {
+        setEditingMessage(null);
+        setMessageText("");
+        return;
+      }
       // Edit message flow
       try {
         const response = await axiosInstance.put(
@@ -337,23 +386,54 @@ const ChatWindow = ({ chatId }) => {
   return (
     <div className="flex flex-col h-screen">
       <div className="p-4 bg-white shadow flex justify-between items-center">
-        <div>
-          <span className="font-bold text-lg">{sender.username}</span>
-          {sender && (
-            <span className="ml-2 text-sm text-gray-600">
-              {sender.online ? (
-                <span className="ml-2 inline-block w-2 h-2 bg-green-500 rounded-full"></span>
-              ) : (
-                <>
-                  <span className="ml-2 inline-block w-2 h-2 bg-gray-500 rounded-full"></span>
-                  Last active: {new Date(sender.lastActive).toLocaleString()}
-                </>
-              )}
+        {loading ? (
+          // Fallback skeleton while data is loading
+          <div className="flex flex-col space-y-2 animate-pulse w-full">
+            <div className="h-6 bg-gray-300 rounded w-1/2"></div>
+            <div className="h-4 bg-gray-300 rounded w-3/4"></div>
+          </div>
+        ) : (
+          <div className="flex flex-col">
+            <span
+              className="font-bold text-lg"
+              aria-label={`Chat with ${sender.username}`}
+            >
+              {sender.username}
             </span>
-          )}
-        </div>
-        <button onClick={() => window.history.back()} className="text-blue-500">
-          Back
+            {sender && (
+              <span className="mt-1 text-sm text-gray-600 flex items-center">
+                {sender.online ? (
+                  <Circle
+                    size={12}
+                    className="text-green-500 mr-1"
+                    aria-label="Online"
+                  />
+                ) : (
+                  <Circle
+                    size={12}
+                    className="text-gray-500 mr-1"
+                    aria-label="Offline"
+                  />
+                )}
+                {sender.online ? (
+                  <span>Online</span>
+                ) : (
+                  <span>
+                    Last active:{" "}
+                    {new Date(sender.lastActive).toLocaleString() || ""}
+                  </span>
+                )}
+              </span>
+            )}
+          </div>
+        )}
+        <button
+          onClick={() => window.history.back()}
+          className="text-blue-500 flex items-center focus:outline-none focus:ring"
+          aria-label="Go back"
+        >
+          <ArrowLeft size={20} className="mr-1" />
+          <span className="hidden sm:inline">Back</span>
         </button>
       </div>
       <div
@@ -361,20 +441,46 @@ const ChatWindow = ({ chatId }) => {
         ref={scrollContainerRef}
         onScroll={handleChatScroll}
       >
-        {messages.map((msg) => (
-          <MessageItem
-            key={msg._id}
-            msg={msg}
-            chatId
-            onSeen={markMessageSeen}
-            activeMenu={activeMenu}
-            setReplyTo={setReplyTo}
-            setActiveMenu={setActiveMenu}
-            setMessageText={setMessageText}
-            setEditingMessage={setEditingMessage}
-            deleteMessage={deleteMessage}
-          />
-        ))}
+        {loading ? (
+          <div className="flex justify-center items-center h-full">
+            <span className="text-gray-500">Loading messages...</span>
+          </div>
+        ) : (
+          <>
+            {loadingMore && (
+              <div className="text-center text-gray-500 mb-2">
+                Loading more messages...
+              </div>
+            )}
+            {messages.map((msg, index) => {
+              const currentDate = new Date(msg.sentAt).toLocaleDateString();
+              const prevDate =
+                index > 0
+                  ? new Date(messages[index - 1].sentAt).toLocaleDateString()
+                  : null;
+              return (
+                <React.Fragment key={msg._id}>
+                  {(index === 0 || currentDate !== prevDate) && (
+                    <div className="text-center text-sm text-gray-500 my-2">
+                      {currentDate}
+                    </div>
+                  )}
+                  <MessageItem
+                    msg={msg}
+                    chatId={chatId}
+                    onSeen={markMessageSeen}
+                    activeMenu={activeMenu}
+                    setReplyTo={setReplyTo}
+                    setActiveMenu={setActiveMenu}
+                    setMessageText={setMessageText}
+                    setEditingMessage={setEditingMessage}
+                    deleteMessage={deleteMessage}
+                  />
+                </React.Fragment>
+              );
+            })}
+          </>
+        )}
 
         <div ref={messagesEndRef} />
       </div>
@@ -389,9 +495,10 @@ const ChatWindow = ({ chatId }) => {
             </span>
             <button
               onClick={() => setReplyTo(null)}
-              className="text-red-500 text-sm"
+              className="text-red-500 focus:outline-none focus:ring"
+              aria-label="Cancel reply"
             >
-              Cancel
+              <FaTimes size={16} />
             </button>
           </div>
         )}
@@ -403,32 +510,55 @@ const ChatWindow = ({ chatId }) => {
                 setEditingMessage(null);
                 setMessageText("");
               }}
-              className="text-red-500 text-sm"
+              className="text-red-500 focus:outline-none focus:ring"
+              aria-label="Cancel edit"
             >
-              Cancel
+              <FaTimes size={16} />
             </button>
           </div>
         )}
         <div className="flex items-center space-x-2">
-          <textarea
-            value={messageText}
-            onChange={handleTypingChange}
-            placeholder="Type your message"
-            className="flex-1 border rounded p-2"
-          />
-
-          {/* Three dots icon that toggles the multimedia popup */}
+          {/* Multimedia toggle button as icon */}
           <button
             onClick={() => setShowMediaPopup((prev) => !prev)}
-            className="p-1"
+            className="p-1 focus:outline-none focus:ring"
+            aria-label="Toggle multimedia options"
           >
-            <FaEllipsisH size={18} className="text-gray-500" />
+            <HiDotsVertical size={25} className="text-gray-500" />
           </button>
-          {/* Send icon */}
-          <button onClick={handleSend} className="p-1">
-            <FaPaperPlane size={18} className="text-blue-500" />
+          {/* Custom input instead of textarea */}
+          <div className="flex-1 relative">
+            <label htmlFor="chat-input" className="sr-only">
+              Type your message
+            </label>
+            <textarea
+              id="chat-input"
+              value={messageText}
+              onChange={handleTypingChange}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  if (!isSendingDisabled) handleSend();
+                }
+              }}
+              placeholder="Type your message (Enter to send, Shift+Enter for new line)"
+              className="w-full border rounded p-2 resize-none focus:outline-none focus:ring focus:border-blue-300 transition-colors"
+              aria-label="Message input"
+              rows={2}
+            />
+          </div>
+          {/* Send button with spam protection as icon */}
+          <button
+            onClick={handleSend}
+            className="p-1 focus:outline-none focus:ring"
+            disabled={isSendingDisabled}
+            aria-label="Send message"
+          >
+            <FaPaperPlane size={25} className="text-blue-500" />
           </button>
-          {/* Multimedia Popup List */}
+        </div>
+        {/* Multimedia Popup List */}
+        <div ref={mediaPopupRef}>
           {showMediaPopup && (
             <MultimediaUpload
               chatId={chatId}
@@ -442,12 +572,14 @@ const ChatWindow = ({ chatId }) => {
             />
           )}
         </div>
-        {showEmojiPicker && (
-          <Picker
-            onSelect={handleEmojiSelect}
-            style={{ position: "absolute", bottom: "80px", right: "20px" }}
-          />
-        )}
+        <div ref={emojiPickerRef}>
+          {showEmojiPicker && (
+            <Picker
+              onSelect={handleEmojiSelect}
+              style={{ position: "absolute", bottom: "80px", right: "20px" }}
+            />
+          )}
+        </div>
       </div>
     </div>
   );
@@ -466,163 +598,208 @@ const MessageItem = ({
 }) => {
   const ref = useRef();
   const { auth } = useContext(AuthContext);
+  const [isExpanded, setIsExpanded] = useState(false);
 
+  // Observe message visibility for "seen" status
   useEffect(() => {
-    // Only observe if message is not already seen
     if (msg.status === "sent" || msg.status === "delivered") {
       const observer = new IntersectionObserver(
         ([entry]) => {
           if (entry.isIntersecting) {
             onSeen(msg._id);
-            // Once seen, unobserve so we don't call it repeatedly
             observer.unobserve(entry.target);
           }
         },
-        { threshold: 0.5 } // Adjust threshold as needed
+        { threshold: 0.5 }
       );
       if (ref.current) observer.observe(ref.current);
       return () => observer.disconnect();
     }
   }, [msg, onSeen]);
 
+  const isMine = msg.sender._id === auth.user._id;
+  const TEXT_THRESHOLD = 200; // Adjust as needed (based on character length)
+
+  const toggleExpand = () => setIsExpanded((prev) => !prev);
+
   return (
-    <div ref={ref} className="mb-4 relative">
+    <div
+      ref={ref}
+      className={`mb-4 relative px-2 ${isMine ? "text-right" : "text-left"}`}
+    >
+      {/* If this is a reply, show reply header */}
       {msg.replyTo && (
-        <div className="p-2 bg-gray-100 border-l-4 border-blue-500 text-sm mb-1">
-          Replying to: {msg.replyTo.text.slice(0, 50)}...
+        <div className="p-2 bg-gray-100 border-l-4 border-blue-500 text-sm mb-1 inline-block max-w-[80%]">
+          <span className="italic text-gray-600">
+            Replied to: {msg.replyTo.text.slice(0, 50)}...
+          </span>
         </div>
       )}
-      <div className="flex justify-between items-center">
-        {/* Display the sender's name */}
-        <span className="font-semibold">{msg.sender.username}</span>
-        <div className="flex items-center">
+      <div className={`flex flex-col ${isMine ? "items-end" : "items-start"}`}>
+        <div className="flex items-center gap-2 mb-1 relative">
+          <span className="font-semibold">{msg.sender.username}</span>
           {msg.edited && (
-            <span className="text-sm text-gray-500"> (edited)</span>
+            <span className="text-xs text-gray-500">(edited)</span>
           )}
-          <span className="text-sm text-gray-500">
+          <span className="text-xs text-gray-500">
             {new Date(msg.sentAt).toLocaleTimeString()}
           </span>
-          <span className="mx-2 text-sm text-gray-500">
-            {msg.sender._id === auth.user._id ? msg.status : ""}
-          </span>
-          {/* Three dots button to toggle popup menu */}
+          {isMine && (
+            <span className="text-xs text-gray-500">{msg.status}</span>
+          )}
+          {/* Popup menu trigger */}
           <button
             onClick={() =>
               setActiveMenu(activeMenu === msg._id ? null : msg._id)
             }
             className="mx-2 text-gray-500 focus:outline-none"
+            aria-label="More options"
           >
             &#8942;
           </button>
-        </div>
-      </div>
-      {msg.text && !msg.media && (
-        <div className="bg-gray-200 p-2 rounded">
-          {msg.deleted ? "This message was deleted" : msg.text}
-        </div>
-      )}
-      {/* Render uploaded media if present */}
-      {msg.media && (
-        <div className="mt-2">
-          {msg.media.type === "image" && (
-            <img
-              src={msg.media.url}
-              alt="Uploaded"
-              className="max-w-xs rounded"
-            />
-          )}
-          {msg.media.type === "video" && (
-            <video controls className="max-w-xs rounded">
-              <source src={msg.media.url} type="video/mp4" />
-              Your browser does not support the video tag.
-            </video>
-          )}
-          {(msg.media.type === "voice" || msg.media.type === "audio") && (
-            <audio controls className="w-full">
-              <source src={msg.media.url} type="audio/webm" />
-              Your browser does not support the audio element.
-            </audio>
-          )}
-          {msg.media.type === "document" && (
-            <a
-              href={msg.media.url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-blue-500 underline"
-            >
-              View File
-            </a>
-          )}
-          {msg.media.type === "file" && (
-            <a
-              href={msg.media.url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-blue-500 underline"
-              download
-            >
-              Download File
-            </a>
-          )}
-          {msg.media.caption && (
-            <div className="text-sm text-gray-600">{msg.media.caption}</div>
-          )}
-        </div>
-      )}
-      {/* Popup menu */}
-      {activeMenu === msg._id && (
-        <div className="absolute right-0 mt-1 bg-white border rounded shadow-lg p-2 z-10">
-          {msg.sender._id === auth.user._id && (
-            <div className="text-xs text-gray-400 mb-2 flex flex-col gap-2">
-              <span>Sent: {new Date(msg.sentAt).toLocaleString()}</span>
-              {msg.deliveredAt && (
-                <span>
-                  Delivered: {new Date(msg.deliveredAt).toLocaleString()}
-                </span>
+          {/* Info Popup Menu */}
+          {activeMenu === msg._id && (
+            <div className="absolute top-full right-0 mt-1 bg-white border rounded shadow-lg p-2 z-10">
+              {isMine && (
+                <div className="text-xs text-gray-400 mb-2 flex flex-col gap-2">
+                  <span>Sent: {new Date(msg.sentAt).toLocaleString()}</span>
+                  {msg.deliveredAt && (
+                    <span>
+                      Delivered: {new Date(msg.deliveredAt).toLocaleString()}
+                    </span>
+                  )}
+                  {msg.seenAt && (
+                    <span>Seen: {new Date(msg.seenAt).toLocaleString()}</span>
+                  )}
+                  {msg.replyTo && (
+                    <span>Replied: {msg.replyTo.text.slice(0, 50)}...</span>
+                  )}
+                  {msg.edited && <span>Edited</span>}
+                </div>
               )}
-              {msg.seenAt && (
-                <span>Seen: {new Date(msg.seenAt).toLocaleString()}</span>
-              )}
+              <div className="flex flex-row gap-2">
+                <button
+                  onClick={() => {
+                    setReplyTo(msg);
+                    setEditingMessage(null);
+                    setActiveMenu(null);
+                  }}
+                  className="text-blue-500 text-xs focus:outline-none"
+                >
+                  Reply
+                </button>
+                {isMine && !msg.deleted && (
+                  <>
+                    <button
+                      onClick={() => {
+                        setEditingMessage(msg);
+                        setMessageText(msg.text);
+                        setReplyTo(null);
+                        setActiveMenu(null);
+                      }}
+                      className="text-blue-500 text-xs focus:outline-none"
+                    >
+                      Edit
+                    </button>
+                    <button
+                      onClick={() => {
+                        deleteMessage(msg._id);
+                        setActiveMenu(null);
+                      }}
+                      className="text-red-500 text-xs focus:outline-none"
+                    >
+                      Delete
+                    </button>
+                  </>
+                )}
+              </div>
             </div>
           )}
-          <div className="flex flex-row gap-2">
-            <button
-              onClick={() => {
-                setReplyTo(msg);
-                setEditingMessage(null);
-                setActiveMenu(null);
-              }}
-              className="text-blue-500 text-sm text-left"
-            >
-              Reply
-            </button>
-            {msg.sender._id === auth.user._id && !msg.deleted && (
-              <>
-                <button
-                  onClick={() => {
-                    setEditingMessage(msg);
-                    setMessageText(msg.text);
-                    setReplyTo(null);
-                    setActiveMenu(null);
-                  }}
-                  className="text-blue-500 text-sm text-left"
+        </div>
+        {/* Message content area */}
+        {msg.deleted ? (
+          <div className="bg-gray-300 p-2 rounded text-sm italic">
+            This message was deleted
+          </div>
+        ) : (
+          <div
+            className={`bg-gray-200 p-2 rounded text-sm shadow-md min-w-[150px] max-w-[75%] sm:max-w-[65%] md:max-w-[55%]`}
+            style={{ whiteSpace: "pre-wrap" }}
+          >
+            {msg.text && (
+              <div className="relative">
+                <div
+                  className={`overflow-hidden ${
+                    !isExpanded && msg.text.length > TEXT_THRESHOLD
+                      ? "max-h-20"
+                      : ""
+                  }`}
                 >
-                  Edit
-                </button>
-                <button
-                  onClick={() => {
-                    deleteMessage(msg._id);
-                    setActiveMenu(null);
-                  }}
-                  className="text-red-500 text-sm text-left"
-                >
-                  Delete
-                </button>
-              </>
+                  {msg.text}
+                </div>
+                {msg.text.length > TEXT_THRESHOLD && (
+                  <button
+                    onClick={toggleExpand}
+                    className="text-blue-500 text-xs mt-1 focus:outline-none"
+                  >
+                    {isExpanded ? "Show less" : "Show more"}
+                  </button>
+                )}
+              </div>
+            )}
+            {/* Media Rendering Section (unchanged) */}
+            {msg.media && (
+              <div className="mt-2">
+                {msg.media.type === "image" && (
+                  <img
+                    src={msg.media.url}
+                    alt="Uploaded"
+                    className="max-w-xs rounded"
+                  />
+                )}
+                {msg.media.type === "video" && (
+                  <video controls className="max-w-xs rounded">
+                    <source src={msg.media.url} type="video/mp4" />
+                    Your browser does not support the video tag.
+                  </video>
+                )}
+                {(msg.media.type === "voice" || msg.media.type === "audio") && (
+                  <audio controls className="w-full">
+                    <source src={msg.media.url} type="audio/webm" />
+                    Your browser does not support the audio element.
+                  </audio>
+                )}
+                {msg.media.type === "document" && (
+                  <a
+                    href={msg.media.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-blue-500 underline"
+                  >
+                    View File
+                  </a>
+                )}
+                {msg.media.type === "file" && (
+                  <a
+                    href={msg.media.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-blue-500 underline"
+                    download
+                  >
+                    Download File
+                  </a>
+                )}
+                {msg.media.caption && (
+                  <div className="text-sm text-gray-600">
+                    {msg.media.caption}
+                  </div>
+                )}
+              </div>
             )}
           </div>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 };

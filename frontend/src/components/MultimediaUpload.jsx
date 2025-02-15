@@ -277,7 +277,7 @@ const MultimediaUpload = ({
   };
 
   return (
-    <div className="p-4">
+    <div>
       {/* Live Capture Modal Popup */}
       {liveMode && liveCaptureMode && (
         <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-50">
@@ -416,25 +416,25 @@ const MultimediaUpload = ({
       )}
 
       {/* Main Action Bar (always visible) */}
-      <div className="absolute bottom-14 right-5 p-2 flex flex-wrap gap-2 bg-white border rounded shadow-lg z-10">
+      <div className="absolute bottom-14 left-5 p-2 flex flex-wrap gap-2 bg-white border rounded shadow-lg z-10">
         <button onClick={() => startLiveCapture("image")} className="p-1">
-          <FaCamera size={18} className="text-green-500" />
+          <FaCamera size={20} className="text-green-500" />
         </button>
         <button onClick={() => startLiveCapture("video")} className="p-1">
-          <FaVideo size={18} className="text-purple-500" />
+          <FaVideo size={20} className="text-purple-500" />
         </button>
         <button onClick={() => startLiveCapture("audio")} className="p-1">
-          <FaMicrophone size={18} className="text-orange-500" />
+          <FaMicrophone size={20} className="text-orange-500" />
         </button>
         <label className="p-1 cursor-pointer">
-          <FaFileAlt size={18} className="text-blue-500" />
+          <FaFileAlt size={20} className="text-blue-500" />
           <input type="file" onChange={handleFileSelect} className="hidden" />
         </label>
         <button
           onClick={() => setShowEmojiPicker((prev) => !prev)}
           className="p-1"
         >
-          <FaSmile size={18} className="text-yellow-500" />
+          <FaSmile size={20} className="text-yellow-500" />
         </button>
       </div>
     </div>

@@ -59,13 +59,13 @@ const Home = () => {
 
       {/* 🌟 Main Content with Smooth Load */}
       <motion.main
-        className="p-4 max-w-screen-xl space-y-6"
+        className="p-4 max-w-screen-xl space-y-6 w-full mx-auto"
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         transition={{ duration: 0.5, delay: 0.2 }}
       >
         {/* 🌟 User Search with Autofocus for Better UX */}
-        <UserSearch autoFocus />
+        <UserSearch className="border rounded-lg p-2 bg-white shadow-md hover:shadow-lg transition" />
 
         {/* 🌟 Chat List with Improved Clickable UX */}
         <ChatList
