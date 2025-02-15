@@ -1,37 +1,78 @@
-import React, { useContext } from "react";
+import React, { useContext, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { AuthContext } from "../context/AuthContext";
 import UserSearch from "../components/UserSearch";
 import ChatList from "../components/ChatList";
+import { motion } from "framer-motion";
 
 const Home = () => {
   const { auth, logout } = useContext(AuthContext);
   const navigate = useNavigate();
+  const [logoutConfirm, setLogoutConfirm] = useState(false);
 
   const handleChatSelect = (chat) => {
     navigate(`/chat/${chat._id}`);
   };
 
+  // 🌟 Logout with Confirmation
+  const handleLogout = () => {
+    if (logoutConfirm) {
+      logout();
+    } else {
+      setLogoutConfirm(true);
+      setTimeout(() => setLogoutConfirm(false), 5000); // Reset after 5 sec
+    }
+  };
+
   return (
-    <div className="min-h-screen bg-gray-100">
-      <header className="p-4 bg-white shadow flex justify-between items-center">
-        <h1 className="text-xl font-bold">Job Portal Chat</h1>
-        <div>
-          <span className="mr-4">
+    <div className="min-h-screen bg-gray-100 flex flex-col">
+      {/* 🌟 Header with Smooth Animation */}
+      <motion.header
+        className="p-4 bg-white shadow flex justify-between items-center sticky top-0 z-10"
+        initial={{ opacity: 0, y: -20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.5 }}
+      >
+        <h1 className="text-xl font-bold" aria-label="Chat App">
+          Chat App
+        </h1>
+
+        <div className="flex items-center space-x-4">
+          <span className="text-gray-700" aria-label="User Info">
             Welcome, {auth.user.username || auth.user.email}
           </span>
+
+          {/* 🌟 Logout Button with Confirmation */}
           <button
-            onClick={logout}
-            className="px-4 py-2 bg-red-500 text-white rounded"
+            onClick={handleLogout}
+            className={`px-4 py-2 rounded transition ${
+              logoutConfirm ? "bg-yellow-500" : "bg-red-500 hover:bg-red-600"
+            } text-white`}
+            aria-label={
+              logoutConfirm ? "Click again to confirm logout" : "Logout"
+            }
           >
-            Logout
+            {logoutConfirm ? "Confirm Logout?" : "Logout"}
           </button>
         </div>
-      </header>
-      <main className="p-4">
-        <UserSearch />
-        <ChatList onSelectChat={handleChatSelect} />
-      </main>
+      </motion.header>
+
+      {/* 🌟 Main Content with Smooth Load */}
+      <motion.main
+        className="p-4 max-w-screen-xl space-y-6"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ duration: 0.5, delay: 0.2 }}
+      >
+        {/* 🌟 User Search with Autofocus for Better UX */}
+        <UserSearch autoFocus />
+
+        {/* 🌟 Chat List with Improved Clickable UX */}
+        <ChatList
+          onSelectChat={handleChatSelect}
+          className="border rounded-lg p-2 bg-white shadow-md hover:shadow-lg transition"
+        />
+      </motion.main>
     </div>
   );
 };

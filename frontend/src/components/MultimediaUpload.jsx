@@ -62,11 +62,29 @@ const MultimediaUpload = ({
       }, 100);
     });
 
+  async function requestMediaPermissions() {
+    try {
+      // Explicitly request permission first
+      const permissions = await navigator.mediaDevices.getUserMedia({
+        video: true,
+        audio: true,
+      });
+      return permissions;
+    } catch (err) {
+      console.error("User denied permissions:", err);
+      setUploadError("User denied permissions");
+      alert("Please allow access to the camera and microphone.");
+      return null;
+    }
+  }
+
   // Start live capture (opens modal)
   const startLiveCapture = async (mode) => {
     setLiveCaptureMode(mode);
     setLiveMode(true);
     setIsLoading(true);
+    const streamCheck = await requestMediaPermissions();
+    if (!streamCheck) return; // Stop if permissions are denied
     try {
       if (mode !== "audio") {
         await waitForVideoElement();
@@ -282,9 +300,7 @@ const MultimediaUpload = ({
               />
             )}
             {liveCaptureMode === "audio" && !isLoading && (
-              <div className="text-center p-4">
-                Ready to record
-              </div>
+              <div className="text-center p-4">Ready to record</div>
             )}
             {isRecording && (
               <div className="text-center text-sm text-gray-700 mt-2">

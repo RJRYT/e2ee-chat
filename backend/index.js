@@ -23,7 +23,6 @@ connectDB();
 // Middleware
 app.use(express.json());
 app.use(cors());
-app.use("/uploads", express.static("uploads")); // For serving files
 
 // Routes
 app.use("/api/auth", authRoutes);
