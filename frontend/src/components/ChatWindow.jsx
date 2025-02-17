@@ -2,12 +2,14 @@ import React, { useState, useEffect, useRef, useContext } from "react";
 import { FaPaperPlane, FaTimes } from "react-icons/fa";
 import { HiDotsVertical } from "react-icons/hi";
 import axiosInstance from "../services/api";
-import { Picker } from "emoji-mart";
-import "emoji-mart/css/emoji-mart.css";
+import data from "@emoji-mart/data";
+import Picker from "@emoji-mart/react";
 import { AuthContext } from "../context/AuthContext";
 import { useSocket } from "../context/SocketContext";
 import MultimediaUpload from "./MultimediaUpload";
 import { ArrowLeft, Circle } from "lucide-react";
+import { encryptMessage, decryptMessage } from "../utils/crypto";
+import { getRecipientPublicKey, getUserPrivateKey } from "../utils/getkeys";
 
 const ChatWindow = ({ chatId }) => {
   const { auth } = useContext(AuthContext);
@@ -88,10 +90,26 @@ const ChatWindow = ({ chatId }) => {
       const response = await axiosInstance.get(
         `/chats/${chatId}/messages?skip=${reset ? 0 : skip}&limit=${limit}`
       );
+      const msgs = response.data.messages;
+      const privateKey = await getUserPrivateKey(auth.user._id);
+      const decryptedMessages = await Promise.all(
+        msgs.map(async (msg) => {
+          try {
+            const decryptedText = await decryptMessage(
+              privateKey,
+              msg.encryptedText
+            );
+            return { ...msg, text: decryptedText, decrypted: true };
+          } catch (err) {
+            console.error("Decryption error", err);
+            return { ...msg, text: "Decryption failed", decrypted: false };
+          }
+        })
+      );
       if (reset) {
         setSender(response.data.sender);
-        setMessages(response.data.messages);
-        setSkip(response.data.messages.length);
+        setMessages(decryptedMessages);
+        setSkip(decryptedMessages.length);
         setHasMore(response.data.hasMore);
         setLoading(false);
       } else {
@@ -100,8 +118,8 @@ const ChatWindow = ({ chatId }) => {
         const prevScrollHeight = container ? container.scrollHeight : 0;
 
         // Prepend older messages
-        setMessages((prev) => [...response.data.messages, ...prev]);
-        setSkip(skip + response.data.messages.length);
+        setMessages((prev) => [...decryptedMessages, ...prev]);
+        setSkip(skip + decryptedMessages.length);
         setHasMore(response.data.hasMore);
         setLoadingMore(false);
 
@@ -156,9 +174,19 @@ const ChatWindow = ({ chatId }) => {
       }
     };
 
-    const handleChatMessage = (msg) => {
+    const handleChatMessage = async(msg) => {
       if (msg.chat._id === chatId) {
         console.log("[Socket] new chat recivied:", msg);
+        try {
+          const privateKey = await getUserPrivateKey(auth.user._id);
+          const decryptedText = await decryptMessage(privateKey, msg.encryptedText);
+          msg.text = decryptedText;
+          msg.decrypted = true;
+        } catch (err) {
+          console.error("Error decrypting message", err);
+          msg.text = "Decryption failed";
+          msg.decrypted = false;
+        }
         setMessages((prev) => [...prev, msg]);
         // Immediately acknowledge delivery back to server
         if (msg.sender._id !== auth.user._id) {
@@ -247,8 +275,21 @@ const ChatWindow = ({ chatId }) => {
       setTypingUsers((prev) => prev.filter((id) => id !== userId));
     };
 
-    const handleMessageEdited = (editedMessage) => {
+    const handleMessageEdited = async(editedMessage) => {
       console.log("[Socket] Message edited event received:", editedMessage);
+      try {
+        const privateKey = await getUserPrivateKey(auth.user._id);
+        const decryptedText = await decryptMessage(
+          privateKey,
+          editedMessage.encryptedText
+        );
+        editedMessage.text = decryptedText;
+        editedMessage.decrypted = true;
+      } catch (err) {
+        console.error("Error decrypting message", err);
+        editedMessage.text = "Decryption failed";
+        editedMessage.decrypted = false;
+      }
       setMessages((prevMessages) =>
         prevMessages.map((msg) =>
           msg._id === editedMessage._id ? editedMessage : msg
@@ -313,9 +354,16 @@ const ChatWindow = ({ chatId }) => {
       }
       // Edit message flow
       try {
+        const recipientPublicKey = await getRecipientPublicKey(sender._id);
+        // Encrypt the message text:
+        const encryptedText = await encryptMessage(
+          recipientPublicKey,
+          messageText
+        );
+
         const response = await axiosInstance.put(
           `/chats/${chatId}/message/${editingMessage._id}`,
-          { text: messageText, encryptedText: "" } // Adjust as needed
+          { encryptedText } // Adjust as needed
         );
         // Update the local messages state with the edited message
         setMessages((prev) =>
@@ -329,8 +377,14 @@ const ChatWindow = ({ chatId }) => {
     } else {
       // New message flow (includes reply if replyTo is set)
       try {
+        const recipientPublicKey = await getRecipientPublicKey(sender._id);
+        // Encrypt the message text:
+        const encryptedText = await encryptMessage(
+          recipientPublicKey,
+          messageText
+        );
         const payload = {
-          text: messageText,
+          encryptedText,
           replyTo: replyTo ? replyTo._id : null,
         };
         await axiosInstance.post(`/chats/${chatId}/message`, payload);
@@ -572,11 +626,16 @@ const ChatWindow = ({ chatId }) => {
             />
           )}
         </div>
-        <div ref={emojiPickerRef}>
+        <div
+          ref={emojiPickerRef}
+          className="absolute bottom-20 right-5"
+        >
           {showEmojiPicker && (
             <Picker
-              onSelect={handleEmojiSelect}
-              style={{ position: "absolute", bottom: "80px", right: "20px" }}
+              onEmojiSelect={handleEmojiSelect}
+              previewPosition="none"
+              theme="light"
+              data={data}
             />
           )}
         </div>

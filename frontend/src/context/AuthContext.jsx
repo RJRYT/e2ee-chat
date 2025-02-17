@@ -1,6 +1,7 @@
 import React, { createContext, useState, useEffect } from "react";
-import jwtDecode from "jwt-decode";
 import axiosInstance from "../services/api";
+import { generateKeyPair, exportPublicKey } from "../utils/crypto";
+import { getPrivateKey, setPrivateKey } from "../utils/keystore";
 
 export const AuthContext = createContext();
 
@@ -14,23 +15,52 @@ export const AuthProvider = ({ children }) => {
     setAuth(null);
   };
 
-  const login = (data) => {
-    // data is expected to include _id, username, email, and token
-    localStorage.setItem("token", data.token);
-    // Optionally store some user details; these will be updated by the profile API
-    localStorage.setItem(
-      "user",
-      JSON.stringify({
-        id: data._id,
-        username: data.username,
-        email: data.email,
-      })
-    );
-    // Set a temporary auth state
-    setAuth({
-      token: data.token,
-      user: { id: data._id, username: data.username, email: data.email },
-    });
+  async function setupUserKeys(user) {
+    const existingPrivate = await getPrivateKey(user._id);
+    if (!existingPrivate) {
+      try {
+        const keyPair = await generateKeyPair();
+        const publicKeyPem = await exportPublicKey(keyPair.publicKey);
+        // Export private key as JWK (for simplicity; encrypt in production)
+        const exportedPrivate = JSON.stringify(
+          await window.crypto.subtle.exportKey("jwk", keyPair.privateKey)
+        );
+        await setPrivateKey(user._id, exportedPrivate);
+        // Send public key to server
+        await axiosInstance.put("users/public-key", {
+          publicKey: publicKeyPem,
+        });
+      } catch (err) {
+        console.error("Key generation failed:", err);
+        throw new Error("Key generation failed. Cannot proceed.");
+      }
+    }
+  }
+
+  const login = async(data) => {
+    try {
+      // data is expected to include _id, username, email, and token
+      localStorage.setItem("token", data.token);
+      await setupUserKeys(data);
+      // Optionally store some user details; these will be updated by the profile API
+      localStorage.setItem(
+        "user",
+        JSON.stringify({
+          id: data._id,
+          username: data.username,
+          email: data.email,
+        })
+      );
+      // Set a temporary auth state
+      setAuth({
+        token: data.token,
+        user: { id: data._id, username: data.username, email: data.email },
+      });
+    } catch (err) {
+      console.error("Key generation failed: ", err);
+      logout();
+      alert("Key generation failed. Please try again.");
+    }
   };
 
   useEffect(() => {
