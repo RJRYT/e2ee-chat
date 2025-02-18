@@ -7,6 +7,8 @@ import Chat from "./pages/Chat";
 import NotFound from "./pages/NotFound";
 import ProtectedRoute from "./routes/ProtectedRoute";
 import PublicRoute from "./routes/PublicRoute";
+import KeyRecovery from "./pages/KeyRecovery";
+import KeyExport from "./pages/KeyExport";
 
 function App() {
   return (
@@ -20,6 +22,8 @@ function App() {
       <Route element={<ProtectedRoute />}>
         <Route path="/" element={<Home />} />
         <Route path="/chat/:chatId" element={<Chat />} />
+        <Route path="/recover" element={<KeyRecovery />} />
+        <Route path="/pair" element={<KeyExport />} />
       </Route>
       <Route path="*" element={<NotFound />} />
     </Routes>

@@ -38,10 +38,9 @@ const ChatList = () => {
           decrypted: true,
         };
       } catch (err) {
-        console.error("Error decrypting lastMessage for chat", chat._id, err);
         chat.lastMessage = {
           ...chat.lastMessage,
-          text: "Decryption failed",
+          text: "unknown message",
           decrypted: false,
         };
       }
@@ -69,9 +68,7 @@ const ChatList = () => {
       setChats((prev) =>
         prev.map((c) => (c._id === chat._id ? updatedChat : c))
       );
-    } catch (err) {
-      console.error("Failed to decrypt chat update", err);
-    }
+    } catch (err) {}
   }
 
   const fetchChats = async () => {

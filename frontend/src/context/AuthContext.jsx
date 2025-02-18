@@ -8,6 +8,7 @@ export const AuthContext = createContext();
 export const AuthProvider = ({ children }) => {
   const [auth, setAuth] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
   const logout = () => {
     localStorage.removeItem("token");
@@ -19,29 +20,40 @@ export const AuthProvider = ({ children }) => {
     const existingPrivate = await getPrivateKey(user._id);
     if (!existingPrivate) {
       try {
-        const keyPair = await generateECDHKeyPair();
-        const publicKeyPem = await exportECDHPublicKey(keyPair.publicKey);
-        // Export private key as JWK (for simplicity; encrypt in production)
-        const exportedPrivate = JSON.stringify(
-          await window.crypto.subtle.exportKey("jwk", keyPair.privateKey)
+        const publicKeyRes = await axiosInstance.get(
+          `users/public-key/${user._id}`
         );
-        await setPrivateKey(user._id, exportedPrivate);
-        // Send public key to server
-        await axiosInstance.put("users/public-key", {
-          publicKey: publicKeyPem,
-        });
+        if (publicKeyRes.data?.publicKey) {
+          setAuth((prev) => ({ ...prev, key: false }));
+          window.location.hash = "/recover";
+          return;
+        } else {
+          const keyPair = await generateECDHKeyPair();
+          const publicKeyPem = await exportECDHPublicKey(keyPair.publicKey);
+          // Export private key as JWK (for simplicity; encrypt in production)
+          const exportedPrivate = JSON.stringify(
+            await window.crypto.subtle.exportKey("jwk", keyPair.privateKey)
+          );
+          await setPrivateKey(user._id, exportedPrivate);
+          // Send public key to server
+          await axiosInstance.put("users/public-key", {
+            publicKey: publicKeyPem,
+          });
+          setAuth((prev) => ({ ...prev, key: true }));
+          return;
+        }
       } catch (err) {
         console.error("Key generation failed:", err);
-        throw new Error("Key generation failed. Cannot proceed.");
+        setError("Key generation failed. Cannot proceed.");
       }
     }
+    setAuth((prev)=>({...prev, key:true}));
   }
 
-  const login = async(data) => {
+  const login = async (data) => {
     try {
       // data is expected to include _id, username, email, and token
       localStorage.setItem("token", data.token);
-      await setupUserKeys(data);
       // Optionally store some user details; these will be updated by the profile API
       localStorage.setItem(
         "user",
@@ -56,10 +68,10 @@ export const AuthProvider = ({ children }) => {
         token: data.token,
         user: { id: data._id, username: data.username, email: data.email },
       });
+      await setupUserKeys(data);
     } catch (err) {
       console.error("Key generation failed: ", err);
       logout();
-      alert("Key generation failed. Please try again.");
     }
   };
 
@@ -69,10 +81,11 @@ export const AuthProvider = ({ children }) => {
       // Validate token by fetching profile information
       axiosInstance
         .get("/profile")
-        .then((res) => {
+        .then(async (res) => {
           // res.data should contain user details returned by the profile route
           setAuth({ token, user: res.data });
           setLoading(false);
+          await setupUserKeys(res.data);
         })
         .catch((err) => {
           console.error("Profile validation failed:", err);
@@ -89,6 +102,15 @@ export const AuthProvider = ({ children }) => {
     return (
       <div className="flex items-center justify-center h-screen">
         <div className="text-xl">Loading...</div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex items-center flex-col justify-center h-screen">
+        <div className="text-4xl">An Error occoured</div>
+        <div className="text-xl">{error}</div>
       </div>
     );
   }

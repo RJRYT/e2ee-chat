@@ -24,6 +24,13 @@ const Home = () => {
     }
   };
 
+  if (!auth || !auth.user)
+    return (
+      <div className="flex items-center flex-col justify-center h-screen">
+        <div className="text-2xl">Not authenticated</div>
+      </div>
+    );
+
   return (
     <div className="min-h-screen bg-gray-100 flex flex-col">
       {/* 🌟 Header with Smooth Animation */}
@@ -41,7 +48,14 @@ const Home = () => {
           <span className="text-gray-700" aria-label="User Info">
             Welcome, {auth.user.username || auth.user.email}
           </span>
-
+          {/* 🌟 Pair Button */}
+          <button
+            aria-label="Pair"
+            className="px-4 py-2 rounded transition text-white bg-blue-500"
+            onClick={()=>{navigate("/pair")}}
+          >
+            Pair
+          </button>
           {/* 🌟 Logout Button with Confirmation */}
           <button
             onClick={handleLogout}

@@ -19,6 +19,7 @@ const ChatWindow = ({ chatId }) => {
   const [messageText, setMessageText] = useState("");
   const [sender, setSender] = useState({});
   const [replyTo, setReplyTo] = useState(null);
+  const [error, setError] = useState(null);
   const [editingMessage, setEditingMessage] = useState(null);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [showMediaPopup, setShowMediaPopup] = useState(false);
@@ -104,14 +105,16 @@ const ChatWindow = ({ chatId }) => {
             );
             return { ...msg, text: decryptedText, decrypted: true };
           } catch (err) {
-            console.error("Decryption error", err);
-            return { ...msg, text: "Decryption failed", decrypted: false };
+            return {};
           }
         })
       );
+      const filteredMsgs = decryptedMessages.filter(
+        (msg) => Object.keys(msg).length !== 0
+      );
       if (reset) {
         setSender(response.data.sender);
-        setMessages(decryptedMessages);
+        setMessages(filteredMsgs);
         setSkip(decryptedMessages.length);
         setHasMore(response.data.hasMore);
         setLoading(false);
@@ -121,7 +124,7 @@ const ChatWindow = ({ chatId }) => {
         const prevScrollHeight = container ? container.scrollHeight : 0;
 
         // Prepend older messages
-        setMessages((prev) => [...decryptedMessages, ...prev]);
+        setMessages((prev) => [...filteredMsgs, ...prev]);
         setSkip(skip + decryptedMessages.length);
         setHasMore(response.data.hasMore);
         setLoadingMore(false);
@@ -137,6 +140,7 @@ const ChatWindow = ({ chatId }) => {
       }
     } catch (err) {
       console.error("Failed to fetch messages", err);
+      setError("Failed to load messages");
       setLoading(false);
       setLoadingMore(false);
     }
@@ -179,15 +183,19 @@ const ChatWindow = ({ chatId }) => {
 
     const handleChatMessage = async (msg) => {
       if (msg.chat._id === chatId) {
-        console.log("[Socket] new chat recivied:", msg);
+        console.log(
+          "[Socket] new chat recivied:",
+          msg,
+          sender._id,
+          auth.user._id
+        );
         try {
           const aesKey = await getRecipientAESKey(sender._id, auth.user._id);
           const decryptedText = await decryptWithAES(aesKey, msg.encryptedText);
           msg.text = decryptedText;
           msg.decrypted = true;
         } catch (err) {
-          console.error("Error decrypting message", err);
-          msg.text = "Decryption failed";
+          msg.text = "unknown message";
           msg.decrypted = false;
         }
         setMessages((prev) => [...prev, msg]);
@@ -286,8 +294,7 @@ const ChatWindow = ({ chatId }) => {
         editedMessage.text = decryptedText;
         editedMessage.decrypted = true;
       } catch (err) {
-        console.error("Error decrypting message", err);
-        editedMessage.text = "Decryption failed";
+        editedMessage.text = "unknown message";
         editedMessage.decrypted = false;
       }
       setMessages((prevMessages) =>
@@ -430,6 +437,20 @@ const ChatWindow = ({ chatId }) => {
       stopTypingTimeoutRef.current = null;
     }, 3000); // 3000ms = 3 seconds inactivity threshold
   };
+
+  if (!auth || !auth.user)
+    return (
+      <div className="flex items-center flex-col justify-center h-screen">
+        <div className="text-2xl">Not authenticated</div>
+      </div>
+    );
+
+  if (error)
+    return (
+      <div className="flex items-center flex-col justify-center h-screen">
+        <div className="text-2xl">{error}</div>
+      </div>
+    );
 
   return (
     <div className="flex flex-col h-screen">
