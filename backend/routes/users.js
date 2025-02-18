@@ -28,7 +28,7 @@ router.get("/public-key/:userId", protect, async (req, res) => {
     if (user && user.publicKey) {
       res.json({ publicKey: user.publicKey });
     } else {
-      res.status(404).json({ message: "Public key not found" });
+      res.json({ message: "Public key not found", publicKey: null });
     }
   } catch (err) {
     res.status(500).json({ message: "Server error" });
