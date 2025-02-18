@@ -4,7 +4,7 @@ import {
   getPublicKeyForUser,
   setPublicKeyForUser,
   getPrivateKey,
-} from "./keystore";
+} from "./keyStore";
 import axiosInstance from "../services/api";
 
 export async function getRecipientAESKey(recipientId, userId) {

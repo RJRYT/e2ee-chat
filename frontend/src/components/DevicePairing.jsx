@@ -2,7 +2,7 @@ import React, { useState, useContext } from "react";
 import axiosInstance from "../services/api";
 import { QRCodeCanvas } from "qrcode.react";
 import { encryptData } from "../utils/keyBackup";
-import { getPrivateKey } from "../utils/keystore";
+import { getPrivateKey } from "../utils/keyStore";
 import { AuthContext } from "../context/AuthContext";
 
 const DevicePairing = () => {

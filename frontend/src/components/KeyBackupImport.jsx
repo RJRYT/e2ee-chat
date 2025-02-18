@@ -1,7 +1,7 @@
 import React, { useState, useContext } from "react";
 import axiosInstance from "../services/api";
 import { decryptData } from "../utils/keyBackup";
-import { setPrivateKey } from "../utils/keystore";
+import { setPrivateKey } from "../utils/keyStore";
 import { AuthContext } from "../context/AuthContext";
 import { Loader2, AlertCircle, CheckCircle } from "lucide-react";
 

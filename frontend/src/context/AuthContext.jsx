@@ -1,7 +1,7 @@
 import React, { createContext, useState, useEffect } from "react";
 import axiosInstance from "../services/api";
 import { generateECDHKeyPair, exportECDHPublicKey } from "../utils/ECDH";
-import { getPrivateKey, setPrivateKey } from "../utils/keystore";
+import { getPrivateKey, setPrivateKey } from "../utils/keyStore";
 
 export const AuthContext = createContext();
 

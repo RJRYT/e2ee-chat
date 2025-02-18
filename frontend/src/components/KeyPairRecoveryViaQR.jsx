@@ -2,7 +2,7 @@ import React, { useState, useContext, useEffect } from "react";
 import axiosInstance from "../services/api";
 import QrScanner from "react-qr-scanner";
 import { decryptData } from "../utils/keyBackup";
-import { setPrivateKey } from "../utils/keystore";
+import { setPrivateKey } from "../utils/keyStore";
 import { AuthContext } from "../context/AuthContext";
 import { Loader2, AlertCircle, CheckCircle, Camera } from "lucide-react";
 

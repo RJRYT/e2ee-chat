@@ -4,7 +4,7 @@ import { AuthContext } from "../context/AuthContext";
 import KeyPairRecoveryViaQR from "../components/KeyPairRecoveryViaQR";
 import KeyImport from "../components/KeyBackupImport";
 import axiosInstance from "../services/api";
-import { getPrivateKey, setPrivateKey } from "../utils/keystore";
+import { getPrivateKey, setPrivateKey } from "../utils/keyStore";
 import { generateECDHKeyPair, exportECDHPublicKey } from "../utils/ECDH";
 import { ArrowLeft, AlertCircle, ShieldAlert } from "lucide-react";
 
