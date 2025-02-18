@@ -5,6 +5,8 @@ import { useSocket } from "../context/SocketContext";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { Circle, MessageSquare, Clock } from "lucide-react";
+import { decryptWithAES } from "../utils/ECDH";
+import { getRecipientAESKey } from "../utils/getkeys";
 
 const ChatList = () => {
   const { auth } = useContext(AuthContext);
@@ -13,10 +15,73 @@ const ChatList = () => {
   const [chats, setChats] = useState([]);
   const [loading, setLoading] = useState(true);
 
+  // Helper: Decrypt lastMessage for a given chat
+  async function decryptChatLastMessage(chat) {
+    if (chat.lastMessage && chat.lastMessage.encryptedText) {
+      // Determine the other participant
+      const otherUser =
+        chat.participants[0]._id.toString() === auth.user._id
+          ? chat.participants[1]
+          : chat.participants[0];
+      try {
+        // Derive the shared AES key (using our stored private key and the other user's public key)
+        const aesKey = await getRecipientAESKey(otherUser._id, auth.user._id);
+        // Decrypt the encrypted text
+        const decryptedText = await decryptWithAES(
+          aesKey,
+          chat.lastMessage.encryptedText
+        );
+        // Update lastMessage with decrypted text
+        chat.lastMessage = {
+          ...chat.lastMessage,
+          text: decryptedText,
+          decrypted: true,
+        };
+      } catch (err) {
+        console.error("Error decrypting lastMessage for chat", chat._id, err);
+        chat.lastMessage = {
+          ...chat.lastMessage,
+          text: "Decryption failed",
+          decrypted: false,
+        };
+      }
+    }
+    return chat;
+  }
+
+  // This async helper updates a specific chat in state with the decrypted lastMessage
+  async function updateChatWithDecryptedLastMessage(chat, lastMessage) {
+    // Determine the other user
+    const otherUser =
+      chat.participants[0]._id.toString() === auth.user._id
+        ? chat.participants[1]
+        : chat.participants[0];
+    try {
+      const aesKey = await getRecipientAESKey(otherUser._id, auth.user._id);
+      const decryptedText = await decryptWithAES(
+        aesKey,
+        lastMessage.encryptedText
+      );
+      const updatedChat = {
+        ...chat,
+        lastMessage: { ...lastMessage, text: decryptedText, decrypted: true },
+      };
+      setChats((prev) =>
+        prev.map((c) => (c._id === chat._id ? updatedChat : c))
+      );
+    } catch (err) {
+      console.error("Failed to decrypt chat update", err);
+    }
+  }
+
   const fetchChats = async () => {
     try {
       const res = await axiosInstance.get("/chats");
-      setChats(res.data);
+      // Process each chat to decrypt its lastMessage
+      const chatsWithDecryptedLastMsg = await Promise.all(
+        res.data.map((chat) => decryptChatLastMessage(chat))
+      );
+      setChats(chatsWithDecryptedLastMsg);
     } catch (err) {
       console.error("Failed to fetch chats:", err);
     } finally {
@@ -33,13 +98,17 @@ const ChatList = () => {
     socket.emit("bulk-chat-message-delivered");
 
     const handleChatUpdated = (data) => {
-      setChats((prevChats) =>
-        prevChats.map((chat) =>
-          chat._id === data.chatId
-            ? { ...chat, lastMessage: data.lastMessage }
-            : chat
-        )
-      );
+      setChats((prevChats) => {
+        const chatToUpdate = prevChats.find((chat) => chat._id === data.chatId);
+        if (
+          chatToUpdate &&
+          data.lastMessage &&
+          data.lastMessage.encryptedText
+        ) {
+          updateChatWithDecryptedLastMessage(chatToUpdate, data.lastMessage);
+        }
+        return prevChats;
+      });
     };
 
     const handleNewChat = (chat) => {

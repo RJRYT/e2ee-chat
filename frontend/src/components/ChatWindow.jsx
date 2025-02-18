@@ -8,8 +8,8 @@ import { AuthContext } from "../context/AuthContext";
 import { useSocket } from "../context/SocketContext";
 import MultimediaUpload from "./MultimediaUpload";
 import { ArrowLeft, Circle } from "lucide-react";
-import { encryptMessage, decryptMessage } from "../utils/crypto";
-import { getRecipientPublicKey, getUserPrivateKey } from "../utils/getkeys";
+import { decryptWithAES, encryptWithAES } from "../utils/ECDH";
+import { getRecipientAESKey } from "../utils/getkeys";
 
 const ChatWindow = ({ chatId }) => {
   const { auth } = useContext(AuthContext);
@@ -91,12 +91,15 @@ const ChatWindow = ({ chatId }) => {
         `/chats/${chatId}/messages?skip=${reset ? 0 : skip}&limit=${limit}`
       );
       const msgs = response.data.messages;
-      const privateKey = await getUserPrivateKey(auth.user._id);
+      const aesKey = await getRecipientAESKey(
+        response.data.sender._id,
+        auth.user._id
+      );
       const decryptedMessages = await Promise.all(
         msgs.map(async (msg) => {
           try {
-            const decryptedText = await decryptMessage(
-              privateKey,
+            const decryptedText = await decryptWithAES(
+              aesKey,
               msg.encryptedText
             );
             return { ...msg, text: decryptedText, decrypted: true };
@@ -174,12 +177,12 @@ const ChatWindow = ({ chatId }) => {
       }
     };
 
-    const handleChatMessage = async(msg) => {
+    const handleChatMessage = async (msg) => {
       if (msg.chat._id === chatId) {
         console.log("[Socket] new chat recivied:", msg);
         try {
-          const privateKey = await getUserPrivateKey(auth.user._id);
-          const decryptedText = await decryptMessage(privateKey, msg.encryptedText);
+          const aesKey = await getRecipientAESKey(sender._id, auth.user._id);
+          const decryptedText = await decryptWithAES(aesKey, msg.encryptedText);
           msg.text = decryptedText;
           msg.decrypted = true;
         } catch (err) {
@@ -275,14 +278,11 @@ const ChatWindow = ({ chatId }) => {
       setTypingUsers((prev) => prev.filter((id) => id !== userId));
     };
 
-    const handleMessageEdited = async(editedMessage) => {
+    const handleMessageEdited = async (editedMessage) => {
       console.log("[Socket] Message edited event received:", editedMessage);
       try {
-        const privateKey = await getUserPrivateKey(auth.user._id);
-        const decryptedText = await decryptMessage(
-          privateKey,
-          editedMessage.encryptedText
-        );
+        const aesKey = await getRecipientAESKey(sender._id, auth.user._id);
+        const decryptedText = await decryptWithAES(aesKey, msg.encryptedText);
         editedMessage.text = decryptedText;
         editedMessage.decrypted = true;
       } catch (err) {
@@ -354,12 +354,9 @@ const ChatWindow = ({ chatId }) => {
       }
       // Edit message flow
       try {
-        const recipientPublicKey = await getRecipientPublicKey(sender._id);
+        const aesKey = await getRecipientAESKey(sender._id, auth.user._id);
         // Encrypt the message text:
-        const encryptedText = await encryptMessage(
-          recipientPublicKey,
-          messageText
-        );
+        const encryptedText = await encryptWithAES(aesKey, messageText);
 
         const response = await axiosInstance.put(
           `/chats/${chatId}/message/${editingMessage._id}`,
@@ -377,12 +374,9 @@ const ChatWindow = ({ chatId }) => {
     } else {
       // New message flow (includes reply if replyTo is set)
       try {
-        const recipientPublicKey = await getRecipientPublicKey(sender._id);
+        const aesKey = await getRecipientAESKey(sender._id, auth.user._id);
         // Encrypt the message text:
-        const encryptedText = await encryptMessage(
-          recipientPublicKey,
-          messageText
-        );
+        const encryptedText = await encryptWithAES(aesKey, messageText);
         const payload = {
           encryptedText,
           replyTo: replyTo ? replyTo._id : null,
@@ -626,10 +620,7 @@ const ChatWindow = ({ chatId }) => {
             />
           )}
         </div>
-        <div
-          ref={emojiPickerRef}
-          className="absolute bottom-20 right-5"
-        >
+        <div ref={emojiPickerRef} className="absolute bottom-20 right-5">
           {showEmojiPicker && (
             <Picker
               onEmojiSelect={handleEmojiSelect}

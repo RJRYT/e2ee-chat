@@ -1,6 +1,6 @@
 import React, { createContext, useState, useEffect } from "react";
 import axiosInstance from "../services/api";
-import { generateKeyPair, exportPublicKey } from "../utils/crypto";
+import { generateECDHKeyPair, exportECDHPublicKey } from "../utils/ECDH";
 import { getPrivateKey, setPrivateKey } from "../utils/keystore";
 
 export const AuthContext = createContext();
@@ -19,8 +19,8 @@ export const AuthProvider = ({ children }) => {
     const existingPrivate = await getPrivateKey(user._id);
     if (!existingPrivate) {
       try {
-        const keyPair = await generateKeyPair();
-        const publicKeyPem = await exportPublicKey(keyPair.publicKey);
+        const keyPair = await generateECDHKeyPair();
+        const publicKeyPem = await exportECDHPublicKey(keyPair.publicKey);
         // Export private key as JWK (for simplicity; encrypt in production)
         const exportedPrivate = JSON.stringify(
           await window.crypto.subtle.exportKey("jwk", keyPair.privateKey)

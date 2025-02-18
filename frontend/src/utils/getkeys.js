@@ -1,5 +1,5 @@
 // In a helper file or within your ChatWindow component
-import { importPublicKey } from "./crypto";
+import { deriveSharedAESKey, importECDHPublicKey } from "../utils/ECDH";
 import {
   getPublicKeyForUser,
   setPublicKeyForUser,
@@ -7,27 +7,28 @@ import {
 } from "./keystore";
 import axiosInstance from "../services/api";
 
-export async function getRecipientPublicKey(recipientId) {
-  let publicKeyPem = await getPublicKeyForUser(recipientId);
-  if (!publicKeyPem) {
-    const response = await axiosInstance.get(
-      `users/public-key/${recipientId}`
-    );
-    publicKeyPem = response.data.publicKey;
-    await setPublicKeyForUser(recipientId, publicKeyPem);
+export async function getRecipientAESKey(recipientId, userId) {
+  let recipientPublicKeyPem = await getPublicKeyForUser(recipientId);
+  if (!recipientPublicKeyPem) {
+    const response = await axiosInstance.get(`users/public-key/${recipientId}`);
+    recipientPublicKeyPem = response.data.publicKey;
+    await setPublicKeyForUser(recipientId, recipientPublicKeyPem);
   }
-  return importPublicKey(publicKeyPem);
+  const recipientPublicKey = await importECDHPublicKey(recipientPublicKeyPem);
+  const ourPrivateKey = await getOurPrivateKey(userId);
+  const aesKey = await deriveSharedAESKey(ourPrivateKey, recipientPublicKey);
+  return aesKey;
 }
 
-export async function getUserPrivateKey(userId) {
+async function getOurPrivateKey(userId) {
   const jwkString = await getPrivateKey(userId);
   if (!jwkString) throw new Error("Private key not found");
   const jwk = JSON.parse(jwkString);
   return window.crypto.subtle.importKey(
     "jwk",
     jwk,
-    { name: "RSA-OAEP", hash: "SHA-256" },
+    { name: "ECDH", namedCurve: "P-256" },
     true,
-    ["decrypt"]
+    ["deriveKey"]
   );
 }
