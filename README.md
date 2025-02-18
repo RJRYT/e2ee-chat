@@ -1,2 +1,3 @@
 # e2ee-chat
-End to End Encrypted chat app
+
+- End to End Encrypted chat app
