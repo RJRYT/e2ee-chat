@@ -185,12 +185,16 @@ const ChatWindow = ({ chatId }) => {
       if (msg.chat._id === chatId) {
         console.log(
           "[Socket] new chat recivied:",
-          msg,
-          sender._id,
+          msg.recipient._id,
           auth.user._id
         );
+        const senderCheck =
+          msg.recipient._id === auth.user._id ? msg.sender : msg.recipient;
         try {
-          const aesKey = await getRecipientAESKey(sender._id, auth.user._id);
+          const aesKey = await getRecipientAESKey(
+            senderCheck._id,
+            auth.user._id
+          );
           const decryptedText = await decryptWithAES(aesKey, msg.encryptedText);
           msg.text = decryptedText;
           msg.decrypted = true;
