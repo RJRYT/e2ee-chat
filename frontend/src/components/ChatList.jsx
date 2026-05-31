@@ -4,58 +4,86 @@ import { AuthContext } from "../context/AuthContext";
 import { useSocket } from "../context/SocketContext";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
-import { Circle, MessageSquare, Clock } from "lucide-react";
+import { FaCircle, FaClock } from "react-icons/fa";
+import { BiSolidMessageRounded } from "react-icons/bi";
 import { decryptWithAES } from "../utils/ECDH";
 import { getRecipientAESKey } from "../utils/getkeys";
 
 const ChatList = () => {
-  const { auth } = useContext(AuthContext);
+  const { auth, refreshKeyState } = useContext(AuthContext);
   const socket = useSocket();
   const navigate = useNavigate();
   const [chats, setChats] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [typingByChat, setTypingByChat] = useState({});
 
-  // Helper: Decrypt lastMessage for a given chat
   async function decryptChatLastMessage(chat) {
-    if (chat.lastMessage && chat.lastMessage.encryptedText) {
-      // Determine the other participant
-      const otherUser =
-        chat.participants[0]._id.toString() === auth.user._id
-          ? chat.participants[1]
-          : chat.participants[0];
-      try {
-        // Derive the shared AES key (using our stored private key and the other user's public key)
-        const aesKey = await getRecipientAESKey(otherUser._id, auth.user._id);
-        // Decrypt the encrypted text
-        const decryptedText = await decryptWithAES(
-          aesKey,
-          chat.lastMessage.encryptedText
-        );
-        // Update lastMessage with decrypted text
-        chat.lastMessage = {
-          ...chat.lastMessage,
-          text: decryptedText,
-          decrypted: true,
-        };
-      } catch (err) {
-        chat.lastMessage = {
-          ...chat.lastMessage,
-          text: "unknown message",
-          decrypted: false,
-        };
-      }
-    }
-    return chat;
-  }
+    if (!chat?.lastMessage) return chat;
 
-  // This async helper updates a specific chat in state with the decrypted lastMessage
-  async function updateChatWithDecryptedLastMessage(chat, lastMessage) {
-    // Determine the other user
+    if (!chat.lastMessage.encryptedText) {
+      return {
+        ...chat,
+        lastMessage: {
+          ...chat.lastMessage,
+          text: chat.lastMessage.text || "",
+          decrypted: Boolean(chat.lastMessage.text),
+        },
+      };
+    }
+
     const otherUser =
       chat.participants[0]._id.toString() === auth.user._id
         ? chat.participants[1]
         : chat.participants[0];
+
     try {
+      const aesKey = await getRecipientAESKey(otherUser._id, auth.user._id);
+      const decryptedText = await decryptWithAES(
+        aesKey,
+        chat.lastMessage.encryptedText
+      );
+      return {
+        ...chat,
+        lastMessage: {
+          ...chat.lastMessage,
+          text: decryptedText,
+          decrypted: true,
+        },
+      };
+    } catch (err) {
+      return {
+        ...chat,
+        lastMessage: {
+          ...chat.lastMessage,
+          text: "unknown message",
+          decrypted: false,
+        },
+      };
+    }
+  }
+
+  async function updateChatWithDecryptedLastMessage(chat, lastMessage) {
+    const otherUser =
+      chat.participants[0]._id.toString() === auth.user._id
+        ? chat.participants[1]
+        : chat.participants[0];
+
+    try {
+      if (!lastMessage?.encryptedText) {
+        const updatedChat = {
+          ...chat,
+          lastMessage: {
+            ...lastMessage,
+            text: lastMessage?.text || "",
+            decrypted: Boolean(lastMessage?.text),
+          },
+        };
+        setChats((prev) =>
+          prev.map((c) => (c._id === chat._id ? updatedChat : c))
+        );
+        return;
+      }
+
       const aesKey = await getRecipientAESKey(otherUser._id, auth.user._id);
       const decryptedText = await decryptWithAES(
         aesKey,
@@ -74,7 +102,6 @@ const ChatList = () => {
   const fetchChats = async () => {
     try {
       const res = await axiosInstance.get("/chats");
-      // Process each chat to decrypt its lastMessage
       const chatsWithDecryptedLastMsg = await Promise.all(
         res.data.map((chat) => decryptChatLastMessage(chat))
       );
@@ -91,17 +118,22 @@ const ChatList = () => {
   }, []);
 
   useEffect(() => {
+    if (auth?.key === false) {
+      refreshKeyState(auth.user);
+    }
+  }, [auth?.key, auth?.user?._id]);
+
+  useEffect(() => {
     if (!socket) return;
     socket.emit("bulk-chat-message-delivered");
 
     const handleChatUpdated = (data) => {
+      if (data?.chatId) {
+        setTypingByChat((prev) => ({ ...prev, [data.chatId]: false }));
+      }
       setChats((prevChats) => {
         const chatToUpdate = prevChats.find((chat) => chat._id === data.chatId);
-        if (
-          chatToUpdate &&
-          data.lastMessage &&
-          data.lastMessage.encryptedText
-        ) {
+        if (chatToUpdate && data.lastMessage) {
           updateChatWithDecryptedLastMessage(chatToUpdate, data.lastMessage);
         }
         return prevChats;
@@ -128,17 +160,29 @@ const ChatList = () => {
     };
 
     const handleBatchDelivered = () => fetchChats();
+    const handleChatTyping = ({ chatId }) => {
+      if (!chatId) return;
+      setTypingByChat((prev) => ({ ...prev, [chatId]: true }));
+    };
+    const handleChatStopTyping = ({ chatId }) => {
+      if (!chatId) return;
+      setTypingByChat((prev) => ({ ...prev, [chatId]: false }));
+    };
 
     socket.on("chat-list-updated", handleChatUpdated);
     socket.on("new-chat", handleNewChat);
     socket.on("user-status", handleUserStatus);
     socket.on("batch-message-delivered", handleBatchDelivered);
+    socket.on("chat-typing", handleChatTyping);
+    socket.on("chat-stop-typing", handleChatStopTyping);
 
     return () => {
       socket.off("chat-list-updated", handleChatUpdated);
       socket.off("new-chat", handleNewChat);
       socket.off("user-status", handleUserStatus);
       socket.off("batch-message-delivered", handleBatchDelivered);
+      socket.off("chat-typing", handleChatTyping);
+      socket.off("chat-stop-typing", handleChatStopTyping);
     };
   }, [socket]);
 
@@ -147,6 +191,24 @@ const ChatList = () => {
       <h3 className="text-lg font-semibold text-center mb-4">Your Chats</h3>
       {loading ? (
         <p className="text-center text-gray-500">Loading chats...</p>
+      ) : auth?.key === false ? (
+        <div className="text-center text-gray-600 space-y-3">
+          <p>Your encryption key is not available on this device.</p>
+          <div className="flex justify-center gap-2">
+            <button
+              className="px-3 py-2 rounded bg-blue-500 text-white"
+              onClick={() => navigate("/recover")}
+            >
+              Recover Key
+            </button>
+            <button
+              className="px-3 py-2 rounded bg-gray-200 text-gray-800"
+              onClick={() => navigate("/pair")}
+            >
+              Pair Device
+            </button>
+          </div>
+        </div>
       ) : chats.length === 0 ? (
         <p className="text-center text-gray-500">No active chats yet</p>
       ) : (
@@ -154,6 +216,9 @@ const ChatList = () => {
           {chats.map((chat) => {
             const otherParticipant =
               chat.participants.find((p) => p._id !== auth.user._id) || {};
+            const mediaType = chat?.lastMessage?.media?.type || "";
+            const isTyping = Boolean(typingByChat[chat._id]);
+
             return (
               <motion.li
                 key={chat._id}
@@ -167,25 +232,27 @@ const ChatList = () => {
                       {otherParticipant.username || "Unknown"}
                     </span>
                     {otherParticipant.online ? (
-                      <Circle className="w-3 h-3 text-green-500" />
+                      <FaCircle className="w-3 h-3 text-green-500" />
                     ) : (
-                      <Circle className="w-3 h-3 text-gray-400" />
+                      <FaCircle className="w-3 h-3 text-gray-400" />
                     )}
                   </div>
                   <p className="text-sm text-gray-600 truncate w-48">
-                    {chat.lastMessage ? (
+                    {isTyping ? (
+                      <span className="text-green-600 italic">Typing...</span>
+                    ) : chat.lastMessage ? (
                       chat.lastMessage.media ? (
-                        chat.lastMessage.media.type.startsWith("image") ? (
-                          <span className="text-blue-500">📷 Photo</span>
-                        ) : chat.lastMessage.media.type.startsWith("video") ? (
-                          <span className="text-red-500">🎥 Video</span>
+                        mediaType.startsWith("image") ? (
+                          <span className="text-blue-500">Photo</span>
+                        ) : mediaType.startsWith("video") ? (
+                          <span className="text-red-500">Video</span>
+                        ) : mediaType === "voice" || mediaType === "audio" ? (
+                          <span className="text-green-600">Audio</span>
                         ) : (
-                          <span className="text-gray-500">
-                            📎 File Attachment
-                          </span>
+                          <span className="text-gray-500">File Attachment</span>
                         )
                       ) : (
-                        chat.lastMessage.text
+                        chat.lastMessage.text || "Message"
                       )
                     ) : (
                       "No messages yet"
@@ -195,11 +262,11 @@ const ChatList = () => {
                 <div className="text-xs text-gray-500 flex items-center gap-1">
                   {chat.lastMessage ? (
                     <>
-                      <Clock className="w-3 h-3" />
+                      <FaClock className="w-3 h-3" />
                       {new Date(chat.lastMessage.sentAt).toLocaleTimeString()}
                       {chat.lastMessage.status !== "seen" &&
-                        chat.lastMessage.sender._id !== auth.user._id && (
-                          <MessageSquare className="w-3 h-3 text-blue-500" />
+                        chat.lastMessage.sender?._id !== auth.user._id && (
+                          <BiSolidMessageRounded className="w-3 h-3 text-blue-500" />
                         )}
                     </>
                   ) : null}

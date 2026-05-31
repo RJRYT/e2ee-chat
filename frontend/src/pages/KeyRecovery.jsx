@@ -10,7 +10,7 @@ import { ArrowLeft, AlertCircle, ShieldAlert } from "lucide-react";
 
 const KeyRecovery = () => {
   const [loading, setLoading] = useState(true);
-  const { auth, logout } = useContext(AuthContext);
+  const { auth, logout, refreshKeyState } = useContext(AuthContext);
   const [recoveryMethod, setRecoveryMethod] = useState("qr");
   const [error, setError] = useState(null);
   const [showWarning, setShowWarning] = useState(true);
@@ -45,8 +45,13 @@ const KeyRecovery = () => {
   useEffect(() => {
     const checkRecoveryState = async () => {
       try {
+        if (!auth?.user?._id) {
+          setLoading(false);
+          return;
+        }
         const privateKey = await getPrivateKey(auth.user._id);
         if (privateKey) {
+          await refreshKeyState(auth.user);
           navigate("/");
           return;
         }
@@ -67,7 +72,12 @@ const KeyRecovery = () => {
     };
 
     checkRecoveryState();
-  }, [navigate]);
+  }, [navigate, auth?.user?._id]);
+
+  const handleRecoverySuccess = async () => {
+    await refreshKeyState(auth.user);
+    navigate("/");
+  };
 
   const handleRegenerate = async () => {
     try {
@@ -171,9 +181,9 @@ const KeyRecovery = () => {
             {/* Recovery Component */}
             <div className="mt-6">
               {recoveryMethod === "qr" ? (
-                <KeyPairRecoveryViaQR onRecoverySuccess={() => navigate("/")} />
+                <KeyPairRecoveryViaQR onRecoverySuccess={handleRecoverySuccess} />
               ) : (
-                <KeyImport onImportSuccess={() => navigate("/")} />
+                <KeyImport onImportSuccess={handleRecoverySuccess} />
               )}
             </div>
           </>

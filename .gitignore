@@ -130,3 +130,6 @@ dist
 .pnp.*
 
 uploads/
+
+# local certificates
+certs/

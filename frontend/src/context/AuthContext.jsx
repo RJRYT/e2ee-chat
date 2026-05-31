@@ -16,16 +16,28 @@ export const AuthProvider = ({ children }) => {
     setAuth(null);
   };
 
+  const refreshKeyState = async (userArg) => {
+    const user = userArg || auth?.user;
+    const userId = user?._id || user?.id;
+    if (!userId) return;
+    const privateKey = await getPrivateKey(userId);
+    setAuth((prev) => ({ ...prev, key: Boolean(privateKey) }));
+  };
+
   async function setupUserKeys(user) {
-    const existingPrivate = await getPrivateKey(user._id);
+    const userId = user?._id || user?.id;
+    if (!userId) {
+      throw new Error("Invalid user payload for key setup");
+    }
+    const existingPrivate = await getPrivateKey(userId);
     if (!existingPrivate) {
       try {
         const publicKeyRes = await axiosInstance.get(
-          `users/public-key/${user._id}`
+          `users/public-key/${userId}`
         );
         if (publicKeyRes.data?.publicKey) {
           setAuth((prev) => ({ ...prev, key: false }));
-          window.location.hash = "/recover";
+          window.location.hash = "#/recover";
           return;
         } else {
           const keyPair = await generateECDHKeyPair();
@@ -34,7 +46,7 @@ export const AuthProvider = ({ children }) => {
           const exportedPrivate = JSON.stringify(
             await window.crypto.subtle.exportKey("jwk", keyPair.privateKey)
           );
-          await setPrivateKey(user._id, exportedPrivate);
+          await setPrivateKey(userId, exportedPrivate);
           // Send public key to server
           await axiosInstance.put("users/public-key", {
             publicKey: publicKeyPem,
@@ -44,10 +56,10 @@ export const AuthProvider = ({ children }) => {
         }
       } catch (err) {
         console.error("Key generation failed:", err);
-        setError("Key generation failed. Cannot proceed.");
+        setError(err?.message || "Key generation failed. Cannot proceed.");
       }
     }
-    setAuth((prev)=>({...prev, key:true}));
+    setAuth((prev) => ({ ...prev, key: true }));
   }
 
   const login = async (data) => {
@@ -66,7 +78,7 @@ export const AuthProvider = ({ children }) => {
       // Set a temporary auth state
       setAuth({
         token: data.token,
-        user: { id: data._id, username: data.username, email: data.email },
+        user: { _id: data._id, username: data.username, email: data.email },
       });
       await setupUserKeys(data);
     } catch (err) {
@@ -116,7 +128,7 @@ export const AuthProvider = ({ children }) => {
   }
 
   return (
-    <AuthContext.Provider value={{ auth, login, logout }}>
+    <AuthContext.Provider value={{ auth, login, logout, refreshKeyState }}>
       {children}
     </AuthContext.Provider>
   );

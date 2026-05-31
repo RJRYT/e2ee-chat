@@ -17,12 +17,32 @@ const User = require("./models/User");
 const app = express();
 const server = http.createServer(app);
 
+const normalizeOrigin = (value = "") => value.replace(/\/+$/, "");
+const allowedOrigins = (process.env.CLIENT_URL || "")
+  .split(",")
+  .map((origin) => normalizeOrigin(origin.trim()))
+  .filter(Boolean);
+
+const originValidator = (origin, callback) => {
+  if (!origin) return callback(null, true);
+  const normalizedOrigin = normalizeOrigin(origin);
+  if (allowedOrigins.includes(normalizedOrigin)) {
+    return callback(null, true);
+  }
+  return callback(new Error(`CORS blocked for origin: ${origin}`));
+};
+
 // Connect Database
 connectDB();
 
 // Middleware
 app.use(express.json());
-app.use(cors());
+app.use(
+  cors({
+    origin: originValidator,
+    credentials: true,
+  })
+);
 
 // Routes
 app.use("/api/auth", authRoutes);
@@ -37,8 +57,9 @@ app.use(errorHandler);
 const { Server } = require("socket.io");
 const io = new Server(server, {
   cors: {
-    origin: process.env.CLIENT_URL, // Adjust for production
+    origin: originValidator,
     methods: ["GET", "POST"],
+    credentials: true,
   },
 });
 
@@ -240,12 +261,50 @@ io.on("connection", (socket) => {
     }
   });
 
-  // Typing indicator events for the chat room
-  socket.on("typing", ({ chatId }) => {
+  // Typing indicator events for chat window + chat list
+  socket.on("typing", async ({ chatId }) => {
     socket.to(chatId).emit("typing", { userId: socket.userId });
+    try {
+      const chat = await Chat.findById(chatId).select("participants");
+      if (!chat) return;
+      const isParticipant = chat.participants.some(
+        (id) => id.toString() === socket.userId.toString()
+      );
+      if (!isParticipant) return;
+      const recipientId = chat.participants
+        .find((id) => id.toString() !== socket.userId.toString())
+        ?.toString();
+      if (recipientId) {
+        io.to(recipientId).emit("chat-typing", {
+          chatId: chatId.toString(),
+          userId: socket.userId.toString(),
+        });
+      }
+    } catch (err) {
+      console.error("Error in typing event:", err);
+    }
   });
-  socket.on("stopTyping", ({ chatId }) => {
+  socket.on("stopTyping", async ({ chatId }) => {
     socket.to(chatId).emit("stopTyping", { userId: socket.userId });
+    try {
+      const chat = await Chat.findById(chatId).select("participants");
+      if (!chat) return;
+      const isParticipant = chat.participants.some(
+        (id) => id.toString() === socket.userId.toString()
+      );
+      if (!isParticipant) return;
+      const recipientId = chat.participants
+        .find((id) => id.toString() !== socket.userId.toString())
+        ?.toString();
+      if (recipientId) {
+        io.to(recipientId).emit("chat-stop-typing", {
+          chatId: chatId.toString(),
+          userId: socket.userId.toString(),
+        });
+      }
+    } catch (err) {
+      console.error("Error in stopTyping event:", err);
+    }
   });
 
   socket.on("disconnect", () => {

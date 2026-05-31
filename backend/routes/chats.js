@@ -15,6 +15,14 @@ router.post("/create", protect, async (req, res) => {
     return res.status(400).json({ message: "Participant id is required." });
   }
   try {
+    if (participantId.toString() === req.user._id.toString()) {
+      return res.status(400).json({ message: "Cannot create chat with yourself." });
+    }
+    const participantExists = await User.findById(participantId).select("_id");
+    if (!participantExists) {
+      return res.status(404).json({ message: "Participant not found." });
+    }
+
     // Check if a chat between these two users already exists
     let chat = await Chat.findOne({
       participants: { $all: [req.user._id, participantId] },
@@ -62,7 +70,19 @@ router.get("/:chatId/messages", protect, async (req, res) => {
   try {
     const { chatId } = req.params;
     const { skip = 0, limit = 20 } = req.query;
+    const parsedSkip = Math.max(0, Number(skip) || 0);
+    const parsedLimit = Math.min(100, Math.max(1, Number(limit) || 20));
     const chat = await Chat.findById(chatId).populate("participants");
+    if (!chat) {
+      return res.status(404).json({ message: "Chat not found" });
+    }
+    const isParticipant = chat.participants.some(
+      (p) => p._id.toString() === req.user._id.toString()
+    );
+    if (!isParticipant) {
+      return res.status(403).json({ message: "Not a participant of this chat" });
+    }
+
     const otherUser =
       chat.participants[0]._id.toString() === req.user._id.toString()
         ? chat.participants[1]
@@ -71,12 +91,12 @@ router.get("/:chatId/messages", protect, async (req, res) => {
     const messages = await Message.find({ chat: chatId })
       .populate("chat sender recipient replyTo")
       .sort({ sentAt: -1 })
-      .skip(Number(skip))
-      .limit(Number(limit));
+      .skip(parsedSkip)
+      .limit(parsedLimit);
 
     // Count the total messages in the chat
     const totalCount = await Message.countDocuments({ chat: chatId });
-    const hasMore = Number(skip) + messages.length < totalCount;
+    const hasMore = parsedSkip + messages.length < totalCount;
 
     // Reverse messages to display oldest first and return with "hasMore" property
     res.json({ messages: messages.reverse(), hasMore, sender: otherUser });
@@ -95,17 +115,23 @@ router.post(
     try {
       const { chatId } = req.params;
       const { text, replyTo, mediaType, encryptedText } = req.body;
+      const normalizedText = typeof text === "string" ? text : "";
       let media = null;
       if (req.file) {
         media = {
           type: mediaType, // e.g., image, video, audio, file, voice
           url: req.file.location,
-          caption: text || "",
+          caption: normalizedText,
         };
       }
       // Ensure the user is a participant of the chat
       let chat = await Chat.findById(chatId);
-      if (!chat || !chat.participants.includes(req.user._id)) {
+      const isParticipant =
+        chat &&
+        chat.participants.some(
+          (id) => id.toString() === req.user._id.toString()
+        );
+      if (!isParticipant) {
         return res
           .status(403)
           .json({ message: "Not a participant of this chat" });
@@ -119,7 +145,8 @@ router.post(
         chat: chatId,
         sender: req.user._id,
         recipient: recipientId,
-        text,
+        // For media uploads, keep text only as caption to avoid duplicate rendering.
+        text: req.file ? "" : normalizedText,
         encryptedText,
         replyTo: replyTo || null,
         media,
@@ -161,6 +188,9 @@ router.put("/:chatId/message/:messageId", protect, async (req, res) => {
       "chat sender recipient replyTo"
     );
     if (!message) return res.status(404).json({ message: "Message not found" });
+    if (message.chat._id.toString() !== chatId.toString()) {
+      return res.status(400).json({ message: "Message does not belong to this chat" });
+    }
     if (message.sender._id.toString() !== req.user._id.toString()) {
       return res
         .status(403)
@@ -187,6 +217,9 @@ router.delete("/:chatId/message/:messageId", protect, async (req, res) => {
     const { chatId, messageId } = req.params;
     const message = await Message.findById(messageId);
     if (!message) return res.status(404).json({ message: "Message not found" });
+    if (message.chat.toString() !== chatId.toString()) {
+      return res.status(400).json({ message: "Message does not belong to this chat" });
+    }
     if (message.sender.toString() !== req.user._id.toString()) {
       return res
         .status(403)

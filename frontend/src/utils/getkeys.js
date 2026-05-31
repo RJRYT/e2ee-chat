@@ -7,12 +7,23 @@ import {
 } from "./keyStore";
 import axiosInstance from "../services/api";
 
-export async function getRecipientAESKey(recipientId, userId) {
-  let recipientPublicKeyPem = await getPublicKeyForUser(recipientId);
+async function fetchAndCachePublicKey(recipientId) {
+  const response = await axiosInstance.get(`users/public-key/${recipientId}`);
+  const recipientPublicKeyPem = response?.data?.publicKey;
   if (!recipientPublicKeyPem) {
-    const response = await axiosInstance.get(`users/public-key/${recipientId}`);
-    recipientPublicKeyPem = response.data.publicKey;
-    await setPublicKeyForUser(recipientId, recipientPublicKeyPem);
+    throw new Error("Recipient public key not found");
+  }
+  await setPublicKeyForUser(recipientId, recipientPublicKeyPem);
+  return recipientPublicKeyPem;
+}
+
+export async function getRecipientAESKey(recipientId, userId, options = {}) {
+  const forceRefresh = Boolean(options.forceRefresh);
+  let recipientPublicKeyPem = forceRefresh
+    ? null
+    : await getPublicKeyForUser(recipientId);
+  if (!recipientPublicKeyPem) {
+    recipientPublicKeyPem = await fetchAndCachePublicKey(recipientId);
   }
   const recipientPublicKey = await importECDHPublicKey(recipientPublicKeyPem);
   const ourPrivateKey = await getOurPrivateKey(userId);
